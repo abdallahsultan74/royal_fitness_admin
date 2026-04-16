@@ -46,7 +46,7 @@ export function Subscriptions() {
       try {
         const resp = await db
           .from("subscription_requests")
-          .select("id, requested_plan, status, created_at, note, user_id, profiles(name, email)")
+          .select("id, requested_plan, status, created_at, note, user_id")
           .order("created_at", { ascending: false });
         // Important: supabase-js does not always throw on permission errors.
         if (resp.error) {
@@ -56,19 +56,43 @@ export function Subscriptions() {
           setLive(false);
           return;
         }
-        console.debug("[Subscriptions] loadRequests rows length:", (resp.data ?? []).length);
         const rows = (resp.data ?? []) as any[];
-        const mapped: Subscription[] = rows.map((data) => ({
-          id: data.id,
-          userName: data.profiles?.name?.toString() ?? t("مستخدم", "User"),
-          userEmail: data.profiles?.email?.toString() ?? "unknown@email.com",
-          plan: data.requested_plan?.toString() ?? "Pro",
-          status: data.status?.toString() ?? "pending",
-          amount: (data.requested_plan?.toString().toLowerCase().includes("basic") ? 19 : 49),
-          renewDate: data.created_at?.toString() ?? new Date().toISOString(),
-          note: data.note?.toString(),
-        }));
-        setSubscriptions(mapped.length ? mapped : []);
+        const userIds = Array.from(
+          new Set(rows.map((r) => r.user_id).filter((v) => v !== null && v !== undefined).map((v) => v.toString())),
+        );
+
+        let profilesById = new Map<string, any>();
+        if (userIds.length > 0) {
+          const profilesResp = await db
+            .from("profiles")
+            .select("id, name, email")
+            .in("id", userIds);
+
+          if (profilesResp.error) {
+            console.error("[Subscriptions] profiles join (in) error", profilesResp.error);
+            setAuthError(profilesResp.error.message);
+          } else {
+            const profiles = (profilesResp.data ?? []) as any[];
+            profilesById = new Map(profiles.map((p) => [p.id?.toString(), p]));
+          }
+        }
+
+        const mapped: Subscription[] = rows.map((data) => {
+          const uid = data.user_id?.toString();
+          const prof = uid ? profilesById.get(uid) : null;
+          return {
+            id: data.id,
+            userName: prof?.name?.toString() ?? t("مستخدم", "User"),
+            userEmail: prof?.email?.toString() ?? "unknown@email.com",
+            plan: data.requested_plan?.toString() ?? "Pro",
+            status: data.status?.toString() ?? "pending",
+            amount: (data.requested_plan?.toString().toLowerCase().includes("basic") ? 19 : 49),
+            renewDate: data.created_at?.toString() ?? new Date().toISOString(),
+            note: data.note?.toString(),
+          };
+        });
+
+        setSubscriptions(mapped);
         setLive(mapped.length > 0);
       } catch (e) {
         console.error("[Subscriptions] loadRequests catch", e);
@@ -118,17 +142,31 @@ export function Subscriptions() {
           setDebugPendingCount(pendingCountResp.count ?? 0);
         }
 
-        const pendingJoinResp = await db
+        // Replace nested join debug with a safe two-step approach.
+        const pendingRowsResp = await db
           .from("subscription_requests")
-          .select("id, requested_plan, status, created_at, note, user_id, profiles(name, email)")
+          .select("id, user_id")
           .eq("status", "pending")
           .order("created_at", { ascending: false });
-        if (pendingJoinResp.error) {
-          console.error("[Subscriptions] pendingJoinResp error", pendingJoinResp.error);
-          setAuthError(pendingJoinResp.error.message);
+        if (pendingRowsResp.error) {
+          console.error("[Subscriptions] pendingRowsResp error", pendingRowsResp.error);
+          setAuthError(pendingRowsResp.error.message);
         } else {
-          console.debug("[Subscriptions] pending join rows length:", (pendingJoinResp.data ?? []).length);
-          setDebugPendingJoinCount((pendingJoinResp.data ?? []).length);
+          const pendingRows = (pendingRowsResp.data ?? []) as any[];
+          const ids = Array.from(new Set(pendingRows.map((r) => r.user_id).filter(Boolean).map((v) => v.toString())));
+          if (ids.length === 0) {
+            setDebugPendingJoinCount(0);
+          } else {
+            const profilesResp = await db.from("profiles").select("id").in("id", ids);
+            if (profilesResp.error) {
+              console.error("[Subscriptions] profiles debug in error", profilesResp.error);
+              setAuthError(profilesResp.error.message);
+              setDebugPendingJoinCount(0);
+            } else {
+              // We store profiles-count here to prove the profiles fetch works.
+              setDebugPendingJoinCount((profilesResp.data ?? []).length);
+            }
+          }
         }
       } catch (e) {
         console.error("[Subscriptions] debug preflight failed", e);
