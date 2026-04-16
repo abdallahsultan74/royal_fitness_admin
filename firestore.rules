@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+
+    match /users/{uid} {
+      allow create: if isOwner(uid);
+      allow read: if isOwner(uid) || isAdmin();
+      allow update: if isOwner(uid) || isAdmin();
+      allow delete: if isAdmin();
+
+      match /workout_sessions/{sessionId} {
+        allow read, write: if isOwner(uid) || isAdmin();
+      }
+
+      match /daily_stats/{dateKey} {
+        allow read, write: if isOwner(uid) || isAdmin();
+      }
+    }
+
+    match /exercises/{exerciseId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
