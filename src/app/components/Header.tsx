@@ -1,9 +1,14 @@
-import { Search, Bell, Globe, ChevronDown } from "lucide-react";
+import { Search, Bell, Globe, ChevronDown, Menu } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useLang } from "./LanguageContext";
 import { useAdminAuth } from "./AuthContext";
 
-export function Header() {
+type HeaderProps = {
+  showMenuButton?: boolean;
+  onMenuClick?: () => void;
+};
+
+export function Header({ showMenuButton = false, onMenuClick }: HeaderProps) {
   const { lang, toggle, t } = useLang();
   const { user, logout } = useAdminAuth();
   const navigate = useNavigate();
@@ -14,9 +19,19 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-10 flex items-center justify-between h-16 px-6 border-b border-border bg-background/80 backdrop-blur-md">
+    <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between min-h-16 px-3 md:px-6 py-2 md:py-0 border-b border-border bg-background/80 backdrop-blur-md gap-3">
       {/* Profile side */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 md:gap-4 flex-wrap">
+        {showMenuButton && (
+          <button
+            onClick={onMenuClick}
+            className="p-2 rounded-lg border border-border text-muted-foreground hover:text-[#D4AF37] hover:border-[#D4AF37]/30 transition-colors cursor-pointer md:hidden"
+            aria-label="Open menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
+
         <div className="flex items-center gap-3 pe-4 border-e border-border cursor-pointer">
           <div className="w-9 h-9 rounded-full border-2 border-[#D4AF37] bg-secondary flex items-center justify-center text-[#D4AF37]" style={{ fontSize: 13, fontWeight: 600 }}>
             {t("م أ", "RA")}
@@ -60,7 +75,7 @@ export function Header() {
       </div>
 
       {/* Search */}
-      <div className="relative w-full max-w-md">
+      <div className="relative w-full md:max-w-md">
         <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input
           type="text"

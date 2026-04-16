@@ -24,14 +24,27 @@ const navItems = [
   { to: "/settings", icon: Settings, ar: "الإعدادات", en: "Settings" },
 ];
 
-export function Sidebar() {
+type SidebarProps = {
+  isMobile?: boolean;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+};
+
+export function Sidebar({ isMobile = false, mobileOpen = false, onMobileClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const { t, isRTL } = useLang();
+  const isCollapsed = !isMobile && collapsed;
 
   return (
     <aside
-      className={`h-screen sticky top-0 flex flex-col border-s border-sidebar-border bg-sidebar transition-all duration-300 ${
-        collapsed ? "w-[72px]" : "w-[260px]"
+      className={`${isMobile ? "fixed inset-y-0 z-40" : "h-screen sticky top-0"} ${
+        isMobile ? (isRTL ? "right-0" : "left-0") : ""
+      } flex flex-col border-s border-sidebar-border bg-sidebar transition-all duration-300 ${
+        isMobile
+          ? `w-[260px] ${mobileOpen ? "translate-x-0" : isRTL ? "translate-x-full" : "-translate-x-full"}`
+          : isCollapsed
+            ? "w-[72px]"
+            : "w-[260px]"
       }`}
     >
       {/* Logo */}
@@ -40,7 +53,7 @@ export function Sidebar() {
           <Dumbbell className="w-5 h-5 text-[#D4AF37]" />
           <Crown className="w-3 h-3 text-[#D4AF37] absolute -top-1 -start-1" />
         </div>
-        {!collapsed && (
+        {!isCollapsed && (
           <div className="overflow-hidden">
             <p className="text-[#D4AF37] tracking-wider" style={{ fontSize: 13, fontWeight: 700 }}>
               {t("رويال فيتنس", "ROYAL FITNESS")}
@@ -59,12 +72,17 @@ export function Sidebar() {
             key={item.en}
             to={item.to}
             end={item.to === "/"}
+            onClick={() => {
+              if (isMobile) {
+                onMobileClose?.();
+              }
+            }}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${
                 isActive
                   ? "bg-[#D4AF37]/10 text-[#D4AF37]"
                   : "text-muted-foreground hover:text-[#F5EAD4] hover:bg-[#D4AF37]/5"
-              } ${collapsed ? "justify-center" : ""}`
+              } ${isCollapsed ? "justify-center" : ""}`
             }
           >
             {({ isActive }) => (
@@ -74,7 +92,7 @@ export function Sidebar() {
                     isActive ? "text-[#D4AF37]" : "text-muted-foreground group-hover:text-[#D4AF37]"
                   }`}
                 />
-                {!collapsed && (
+                {!isCollapsed && (
                   <span style={{ fontSize: 14 }}>{t(item.ar, item.en)}</span>
                 )}
               </>
@@ -84,19 +102,21 @@ export function Sidebar() {
       </nav>
 
       {/* Collapse toggle */}
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="flex items-center justify-center gap-2 px-3 py-4 border-t border-sidebar-border text-muted-foreground hover:text-[#D4AF37] transition-colors cursor-pointer"
-      >
-        {collapsed ? (
-          isRTL ? <ChevronsLeft className="w-5 h-5" /> : <ChevronsRight className="w-5 h-5" />
-        ) : (
-          <>
-            {isRTL ? <ChevronsRight className="w-5 h-5" /> : <ChevronsLeft className="w-5 h-5" />}
-            <span style={{ fontSize: 13 }}>{t("طي القائمة", "Collapse")}</span>
-          </>
-        )}
-      </button>
+      {!isMobile && (
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="flex items-center justify-center gap-2 px-3 py-4 border-t border-sidebar-border text-muted-foreground hover:text-[#D4AF37] transition-colors cursor-pointer"
+        >
+          {isCollapsed ? (
+            isRTL ? <ChevronsLeft className="w-5 h-5" /> : <ChevronsRight className="w-5 h-5" />
+          ) : (
+            <>
+              {isRTL ? <ChevronsRight className="w-5 h-5" /> : <ChevronsLeft className="w-5 h-5" />}
+              <span style={{ fontSize: 13 }}>{t("طي القائمة", "Collapse")}</span>
+            </>
+          )}
+        </button>
+      )}
     </aside>
   );
 }
