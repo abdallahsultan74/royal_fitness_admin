@@ -112,6 +112,16 @@ export function Subscriptions() {
       if (next === "approved") {
         await db.from("profiles").update({ plan: item.plan.toLowerCase(), status: "active" }).eq("email", item.userEmail);
       }
+      await db.from("admin_notifications").insert({
+        type: "subscription_request_update",
+        title: next === "approved" ? t("تمت الموافقة على الاشتراك", "Subscription approved") : t("تم رفض الاشتراك", "Subscription rejected"),
+        body:
+          `${item.userName} (${item.userEmail}) - ` +
+          (next === "approved"
+            ? t("تمت الموافقة على طلب التفعيل", "Activation request approved")
+            : t("تم رفض طلب التفعيل", "Activation request rejected")),
+        read: false,
+      });
     } finally {
       setPendingId(null);
     }

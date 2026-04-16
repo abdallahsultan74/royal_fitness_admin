@@ -61,6 +61,14 @@ type ExerciseItem = {
   mediaType?: "image" | "video";
   audioUrl?: string;
 };
+type ExerciseFormState = {
+  name: string;
+  target: string;
+  equipment: string;
+  difficulty: string;
+  gifUrl: string;
+  audioUrl: string;
+};
 
 function FilterSelect({ label, options, value, onChange }: { label: string; options: string[]; value: string; onChange: (v: string) => void }) {
   return (
@@ -91,6 +99,18 @@ export function ExerciseManagement() {
   const [live, setLive] = useState(false);
   const [pendingId, setPendingId] = useState<string | number | null>(null);
   const [busyUpload, setBusyUpload] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit" | "view" | null>(null);
+  const [activeExercise, setActiveExercise] = useState<ExerciseItem | null>(null);
+  const [form, setForm] = useState<ExerciseFormState>({
+    name: "",
+    target: lang === "ar" ? "الصدر" : "Chest",
+    equipment: lang === "ar" ? "وزن الجسم" : "Bodyweight",
+    difficulty: fd.difficulty[1] ?? fd.all,
+    gifUrl: "",
+    audioUrl: "",
+  });
+  const [selectedMediaFile, setSelectedMediaFile] = useState<File | null>(null);
+  const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
   const maxMediaSize = 10 * 1024 * 1024;
 
   useEffect(() => {
@@ -162,40 +182,47 @@ export function ExerciseManagement() {
     ? ["الصورة", "اسم التمرين", "العضلة المستهدفة", "المستوى", "الأدوات", "المصدر", "الإجراءات"]
     : ["GIF", "Name", "Target Muscle", "Difficulty", "Equipment", "Source", "Actions"];
 
-  const createExerciseInput = (seed?: ExerciseItem) => {
-    const defaultName = seed?.name ?? "";
-    const defaultTarget = seed?.target ?? (lang === "ar" ? "الصدر" : "Chest");
-    const defaultEquipment = seed?.equipment ?? (lang === "ar" ? "وزن الجسم" : "Bodyweight");
-    const defaultDifficulty = seed?.difficulty ?? fd.difficulty[1];
-    const defaultGifUrl = seed?.gifUrl ?? "";
-    const defaultAudioUrl = seed?.audioUrl ?? "";
-    const name = window.prompt(t("اسم التمرين", "Exercise name"), defaultName);
-    if (!name || !name.trim()) return null;
-
-    const target = window.prompt(t("العضلة المستهدفة", "Target muscle"), defaultTarget) || defaultTarget;
-    const equipment = window.prompt(t("الأدوات", "Equipment"), defaultEquipment) || defaultEquipment;
-    const difficulty = window.prompt(t("المستوى", "Difficulty"), defaultDifficulty) || defaultDifficulty;
-    const gifUrl = window.prompt(t("رابط ملف GIF", "GIF URL"), defaultGifUrl) || defaultGifUrl;
-    const audioUrl = window.prompt(t("رابط شرح صوتي (اختياري)", "Audio explanation URL (optional)"), defaultAudioUrl) || defaultAudioUrl;
-    return {
-      name: name.trim(),
-      target: target.trim(),
-      equipment: equipment.trim(),
-      difficulty: difficulty.trim(),
-      gifUrl: gifUrl.trim(),
-      audioUrl: audioUrl.trim(),
-    };
+  const resetModalState = () => {
+    setModalMode(null);
+    setActiveExercise(null);
+    setSelectedMediaFile(null);
+    setSelectedAudioFile(null);
   };
 
-  const pickFile = (accept: string): Promise<File | null> =>
-    new Promise((resolve) => {
-      if (typeof window === "undefined") return resolve(null);
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = accept;
-      input.onchange = () => resolve(input.files?.[0] ?? null);
-      input.click();
+  const openCreateModal = () => {
+    setForm({
+      name: "",
+      target: lang === "ar" ? "الصدر" : "Chest",
+      equipment: lang === "ar" ? "وزن الجسم" : "Bodyweight",
+      difficulty: fd.difficulty[1] ?? fd.all,
+      gifUrl: "",
+      audioUrl: "",
     });
+    setActiveExercise(null);
+    setSelectedMediaFile(null);
+    setSelectedAudioFile(null);
+    setModalMode("create");
+  };
+
+  const openEditModal = (exercise: ExerciseItem) => {
+    setForm({
+      name: exercise.name,
+      target: exercise.target,
+      equipment: exercise.equipment,
+      difficulty: exercise.difficulty,
+      gifUrl: exercise.gifUrl ?? "",
+      audioUrl: exercise.audioUrl ?? "",
+    });
+    setActiveExercise(exercise);
+    setSelectedMediaFile(null);
+    setSelectedAudioFile(null);
+    setModalMode("edit");
+  };
+
+  const openViewModal = (exercise: ExerciseItem) => {
+    setActiveExercise(exercise);
+    setModalMode("view");
+  };
 
   const uploadFile = async (file: File, folder: "media" | "audio") => {
     if (!db) return null;
@@ -217,10 +244,26 @@ export function ExerciseManagement() {
     return data.publicUrl;
   };
 
+  const validateSelectedFile = (file: File | null) => {
+    if (!file) return true;
+    if (file.size > maxMediaSize) {
+      window.alert(t("حجم الملف يجب ألا يتجاوز 10 ميجا", "File size must be <= 10MB"));
+      return false;
+    }
+    return true;
+  };
+
   const handleAddExercise = async () => {
-    if (typeof window === "undefined") return;
-    const input = createExerciseInput();
-    if (!input) return;
+    const input = {
+      name: form.name.trim(),
+      target: form.target.trim(),
+      equipment: form.equipment.trim(),
+      difficulty: form.difficulty.trim(),
+      gifUrl: form.gifUrl.trim(),
+      audioUrl: form.audioUrl.trim(),
+    };
+    if (!input.name) return;
+    if (!validateSelectedFile(selectedMediaFile) || !validateSelectedFile(selectedAudioFile)) return;
 
     if (!canUseFirebase || !db) {
       const localExercise: ExerciseItem = {
@@ -234,6 +277,7 @@ export function ExerciseManagement() {
         gifUrl: input.gifUrl,
       };
       setExercises((prev) => [localExercise, ...prev]);
+      resetModalState();
       return;
     }
 
@@ -243,14 +287,12 @@ export function ExerciseManagement() {
     let mediaType: "image" | "video" = "image";
     let audioUrl = input.audioUrl || null;
     try {
-      const mediaFile = await pickFile("image/*,video/*");
-      if (mediaFile) {
-        mediaType = mediaFile.type.startsWith("video/") ? "video" : "image";
-        mediaUrl = await uploadFile(mediaFile, "media");
+      if (selectedMediaFile) {
+        mediaType = selectedMediaFile.type.startsWith("video/") ? "video" : "image";
+        mediaUrl = await uploadFile(selectedMediaFile, "media");
       }
-      const audioFile = await pickFile("audio/*");
-      if (audioFile) {
-        audioUrl = await uploadFile(audioFile, "audio");
+      if (selectedAudioFile) {
+        audioUrl = await uploadFile(selectedAudioFile, "audio");
       }
     } finally {
       setBusyUpload(false);
@@ -258,7 +300,10 @@ export function ExerciseManagement() {
     await db.from("exercises").insert({
       name: input.name,
       name_ar: input.name,
+      type: "home",
       target: input.target,
+      minutes: 1,
+      calories: 0,
       equipment: input.equipment,
       level: input.difficulty,
       image_asset_path: mediaUrl,
@@ -267,17 +312,28 @@ export function ExerciseManagement() {
       audio_url: audioUrl,
       source: "Admin",
     });
+    resetModalState();
   };
 
-  const handleEditExercise = async (exercise: ExerciseItem) => {
-    if (typeof window === "undefined") return;
-    const input = createExerciseInput(exercise);
-    if (!input) return;
+  const handleEditExercise = async () => {
+    if (!activeExercise) return;
+    const exercise = activeExercise;
+    const input = {
+      name: form.name.trim(),
+      target: form.target.trim(),
+      equipment: form.equipment.trim(),
+      difficulty: form.difficulty.trim(),
+      gifUrl: form.gifUrl.trim(),
+      audioUrl: form.audioUrl.trim(),
+    };
+    if (!input.name) return;
+    if (!validateSelectedFile(selectedMediaFile) || !validateSelectedFile(selectedAudioFile)) return;
 
     if (!canUseFirebase || !db || typeof exercise.id !== "string") {
       setExercises((prev) =>
         prev.map((item) => (item.id === exercise.id ? { ...item, ...input } : item)),
       );
+      resetModalState();
       return;
     }
 
@@ -288,14 +344,12 @@ export function ExerciseManagement() {
       let mediaUrl = input.gifUrl || exercise.gifUrl || null;
       let mediaType: "image" | "video" = exercise.mediaType ?? "image";
       let audioUrl = input.audioUrl || exercise.audioUrl || null;
-      const mediaFile = await pickFile("image/*,video/*");
-      if (mediaFile) {
-        mediaType = mediaFile.type.startsWith("video/") ? "video" : "image";
-        mediaUrl = await uploadFile(mediaFile, "media");
+      if (selectedMediaFile) {
+        mediaType = selectedMediaFile.type.startsWith("video/") ? "video" : "image";
+        mediaUrl = await uploadFile(selectedMediaFile, "media");
       }
-      const audioFile = await pickFile("audio/*");
-      if (audioFile) {
-        audioUrl = await uploadFile(audioFile, "audio");
+      if (selectedAudioFile) {
+        audioUrl = await uploadFile(selectedAudioFile, "audio");
       }
       await db.from("exercises").update({
         name: input.name,
@@ -308,6 +362,7 @@ export function ExerciseManagement() {
         media_type: mediaType,
         audio_url: audioUrl,
       }).eq("id", exercise.id);
+      resetModalState();
     } finally {
       setBusyUpload(false);
       setPendingId(null);
@@ -335,13 +390,6 @@ export function ExerciseManagement() {
     }
   };
 
-  const handleViewExercise = (exercise: ExerciseItem) => {
-    if (typeof window === "undefined") return;
-    window.alert(
-      `${t("الاسم", "Name")}: ${exercise.name}\n${t("العضلة", "Target")}: ${exercise.target}\n${t("المستوى", "Difficulty")}: ${exercise.difficulty}\n${t("الأدوات", "Equipment")}: ${exercise.equipment}`,
-    );
-  };
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -356,7 +404,7 @@ export function ExerciseManagement() {
           </p>
         </div>
         <button
-          onClick={handleAddExercise}
+          onClick={openCreateModal}
           className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#D4AF37] text-[#012217] hover:bg-[#c9a430] transition-colors shadow-[0_0_20px_rgba(212,175,55,0.15)] cursor-pointer"
           style={{ fontSize: 14, fontWeight: 600 }}
         >
@@ -423,14 +471,14 @@ export function ExerciseManagement() {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
-                      onClick={() => handleViewExercise(e)}
+                      onClick={() => openViewModal(e)}
                       className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-[#D4AF37] transition-colors cursor-pointer"
                       title={t("عرض", "View")}
                     >
                       <Eye className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleEditExercise(e)}
+                      onClick={() => openEditModal(e)}
                       disabled={pendingId === e.id}
                       className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-[#D4AF37] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       title={t("تعديل", "Edit")}
@@ -457,6 +505,103 @@ export function ExerciseManagement() {
           </div>
         )}
       </div>
+      {modalMode && (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl rounded-xl border border-border bg-card p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[#F5EAD4]" style={{ fontSize: 18, fontWeight: 600 }}>
+                {modalMode === "create"
+                  ? t("إضافة تمرين جديد", "Add New Exercise")
+                  : modalMode === "edit"
+                    ? t("تعديل تمرين", "Edit Exercise")
+                    : t("عرض التمرين", "View Exercise")}
+              </h3>
+              <button className="text-muted-foreground hover:text-[#D4AF37]" onClick={resetModalState}>
+                {t("إغلاق", "Close")}
+              </button>
+            </div>
+            {modalMode === "view" && activeExercise ? (
+              <div className="space-y-2 text-muted-foreground" style={{ fontSize: 14 }}>
+                <p><span className="text-[#F5EAD4]">{t("الاسم", "Name")}:</span> {activeExercise.name}</p>
+                <p><span className="text-[#F5EAD4]">{t("العضلة", "Target")}:</span> {activeExercise.target}</p>
+                <p><span className="text-[#F5EAD4]">{t("المستوى", "Difficulty")}:</span> {activeExercise.difficulty}</p>
+                <p><span className="text-[#F5EAD4]">{t("الأدوات", "Equipment")}:</span> {activeExercise.equipment}</p>
+                {activeExercise.gifUrl ? <p className="break-all"><span className="text-[#F5EAD4]">{t("رابط الميديا", "Media URL")}:</span> {activeExercise.gifUrl}</p> : null}
+                {activeExercise.audioUrl ? <p className="break-all"><span className="text-[#F5EAD4]">{t("رابط الصوت", "Audio URL")}:</span> {activeExercise.audioUrl}</p> : null}
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("اسم التمرين", "Exercise name")}</label>
+                    <input value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-secondary border border-border" />
+                  </div>
+                  <div>
+                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("العضلة المستهدفة", "Target muscle")}</label>
+                    <input value={form.target} onChange={(e) => setForm((prev) => ({ ...prev, target: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-secondary border border-border" />
+                  </div>
+                  <div>
+                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("الأدوات", "Equipment")}</label>
+                    <input value={form.equipment} onChange={(e) => setForm((prev) => ({ ...prev, equipment: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-secondary border border-border" />
+                  </div>
+                  <div>
+                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("المستوى", "Difficulty")}</label>
+                    <select value={form.difficulty} onChange={(e) => setForm((prev) => ({ ...prev, difficulty: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-secondary border border-border">
+                      {fd.difficulty.filter((x) => x !== fd.all).map((x) => (
+                        <option key={x} value={x}>{x}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("رابط الميديا (اختياري)", "Media URL (optional)")}</label>
+                    <input value={form.gifUrl} onChange={(e) => setForm((prev) => ({ ...prev, gifUrl: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-secondary border border-border" />
+                  </div>
+                  <div>
+                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("رابط الصوت (اختياري)", "Audio URL (optional)")}</label>
+                    <input value={form.audioUrl} onChange={(e) => setForm((prev) => ({ ...prev, audioUrl: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-secondary border border-border" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("رفع صورة/فيديو (حد 10MB)", "Upload image/video (max 10MB)")}</label>
+                    <input
+                      type="file"
+                      accept="image/*,video/*"
+                      onChange={(e) => setSelectedMediaFile(e.target.files?.[0] ?? null)}
+                      className="w-full text-muted-foreground"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("رفع ملف صوتي (حد 10MB)", "Upload audio (max 10MB)")}</label>
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => setSelectedAudioFile(e.target.files?.[0] ?? null)}
+                      className="w-full text-muted-foreground"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={resetModalState} className="px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-[#F5EAD4] hover:bg-secondary">
+                {t("إلغاء", "Cancel")}
+              </button>
+              {modalMode !== "view" && (
+                <button
+                  onClick={modalMode === "create" ? handleAddExercise : handleEditExercise}
+                  disabled={busyUpload}
+                  className="px-4 py-2 rounded-lg bg-[#D4AF37] text-[#012217] hover:bg-[#c9a430] disabled:opacity-50"
+                >
+                  {modalMode === "create" ? t("إضافة", "Add") : t("حفظ", "Save")}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
