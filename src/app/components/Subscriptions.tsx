@@ -25,42 +25,124 @@ export function Subscriptions() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>(localizedFallback);
   const [live, setLive] = useState(false);
   const [pendingId, setPendingId] = useState<string | number | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [debugPendingCount, setDebugPendingCount] = useState<number | null>(null);
+  const [debugPendingJoinCount, setDebugPendingJoinCount] = useState<number | null>(null);
 
   useEffect(() => {
     if (!db || !hasFirebaseConfig) {
       setSubscriptions(localizedFallback);
       setLive(false);
+      setAuthError("Missing Supabase config in environment.");
       return;
     }
+    setAuthError(null);
+    setDebugPendingCount(null);
+    setDebugPendingJoinCount(null);
     let channel: ReturnType<typeof db.channel> | null = null;
     let cancelled = false;
 
     const loadRequests = async () => {
-      const resp = await db
-        .from("subscription_requests")
-        .select("id, requested_plan, status, created_at, note, user_id, profiles(name, email)")
-        .order("created_at", { ascending: false });
-      const rows = (resp.data ?? []) as any[];
-      const mapped: Subscription[] = rows.map((data) => ({
-        id: data.id,
-        userName: data.profiles?.name?.toString() ?? t("مستخدم", "User"),
-        userEmail: data.profiles?.email?.toString() ?? "unknown@email.com",
-        plan: data.requested_plan?.toString() ?? "Pro",
-        status: data.status?.toString() ?? "pending",
-        amount: (data.requested_plan?.toString().toLowerCase().includes("basic") ? 19 : 49),
-        renewDate: data.created_at?.toString() ?? new Date().toISOString(),
-        note: data.note?.toString(),
-      }));
-      setSubscriptions(mapped.length ? mapped : localizedFallback);
-      setLive(mapped.length > 0);
+      try {
+        const resp = await db
+          .from("subscription_requests")
+          .select("id, requested_plan, status, created_at, note, user_id, profiles(name, email)")
+          .order("created_at", { ascending: false });
+        // Important: supabase-js does not always throw on permission errors.
+        if (resp.error) {
+          console.error("[Subscriptions] loadRequests error", resp.error);
+          setAuthError(resp.error.message);
+          setSubscriptions([]);
+          setLive(false);
+          return;
+        }
+        console.debug("[Subscriptions] loadRequests rows length:", (resp.data ?? []).length);
+        const rows = (resp.data ?? []) as any[];
+        const mapped: Subscription[] = rows.map((data) => ({
+          id: data.id,
+          userName: data.profiles?.name?.toString() ?? t("مستخدم", "User"),
+          userEmail: data.profiles?.email?.toString() ?? "unknown@email.com",
+          plan: data.requested_plan?.toString() ?? "Pro",
+          status: data.status?.toString() ?? "pending",
+          amount: (data.requested_plan?.toString().toLowerCase().includes("basic") ? 19 : 49),
+          renewDate: data.created_at?.toString() ?? new Date().toISOString(),
+          note: data.note?.toString(),
+        }));
+        setSubscriptions(mapped.length ? mapped : []);
+        setLive(mapped.length > 0);
+      } catch (e) {
+        console.error("[Subscriptions] loadRequests catch", e);
+        setAuthError((e as Error)?.message ?? "Failed to load subscription requests.");
+        setSubscriptions([]);
+        setLive(false);
+      }
     };
 
-    ensureAdminAuth().then((authed) => {
-      if (!authed || cancelled) return;
+    ensureAdminAuth().then(async (authed) => {
+      if (!authed || cancelled) {
+        if (!authed) {
+          setAuthError("Admin auth failed. Check VITE_ADMIN_EMAIL / VITE_ADMIN_PASSWORD and ensure VITE_LOCAL_AUTH=false in Vercel env.");
+          setSubscriptions([]);
+          setLive(false);
+        }
+        return;
+      }
+
+      // Extra debug: confirm pending count inside the same session,
+      // and also test the join query shape we use on the page.
+      try {
+        const session = await db.auth.getSession();
+        console.debug("[Subscriptions] session user:", session.data.session?.user?.id, session.data.session?.user?.email);
+
+        const isAdminResp = await db.rpc("is_admin");
+        if (isAdminResp?.error) {
+          setAuthError(isAdminResp.error.message);
+        } else {
+          const isAdmin = typeof isAdminResp.data === "boolean"
+            ? isAdminResp.data
+            : (Array.isArray(isAdminResp.data) ? Boolean(isAdminResp.data[0]) : Boolean(isAdminResp.data));
+          if (!isAdmin) {
+            setAuthError("is_admin() returned false in this session (JWT/RLS context missing).");
+          }
+        }
+
+        const pendingCountResp = await db
+          .from("subscription_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending");
+        if (pendingCountResp.error) {
+          console.error("[Subscriptions] pendingCountResp error", pendingCountResp.error);
+          setAuthError(pendingCountResp.error.message);
+        } else {
+          console.debug("[Subscriptions] pending count (no join):", pendingCountResp.count);
+          setDebugPendingCount(pendingCountResp.count ?? 0);
+        }
+
+        const pendingJoinResp = await db
+          .from("subscription_requests")
+          .select("id, requested_plan, status, created_at, note, user_id, profiles(name, email)")
+          .eq("status", "pending")
+          .order("created_at", { ascending: false });
+        if (pendingJoinResp.error) {
+          console.error("[Subscriptions] pendingJoinResp error", pendingJoinResp.error);
+          setAuthError(pendingJoinResp.error.message);
+        } else {
+          console.debug("[Subscriptions] pending join rows length:", (pendingJoinResp.data ?? []).length);
+          setDebugPendingJoinCount((pendingJoinResp.data ?? []).length);
+        }
+      } catch (e) {
+        console.error("[Subscriptions] debug preflight failed", e);
+      }
+
+      if (cancelled) return;
       loadRequests();
       channel = db
         .channel("subscription-requests-live")
-        .on("postgres_changes", { event: "*", schema: "public", table: "subscription_requests" }, () => loadRequests())
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "subscription_requests" },
+          () => loadRequests(),
+        )
         .subscribe();
     });
 
@@ -137,6 +219,21 @@ export function Subscriptions() {
             {live ? t("بيانات حية", "Live data") : t("بيانات تجريبية", "Demo data")}
           </span>
         </p>
+        {authError ? (
+          <div className="mt-3 text-red-400" style={{ fontSize: 13 }}>
+            {authError}
+          </div>
+        ) : null}
+        {debugPendingCount !== null ? (
+          <div className="mt-2 text-muted-foreground" style={{ fontSize: 12 }}>
+            Pending count (no join) in this session: {debugPendingCount}
+          </div>
+        ) : null}
+        {debugPendingJoinCount !== null ? (
+          <div className="mt-1 text-muted-foreground" style={{ fontSize: 12 }}>
+            Pending rows with join(profiles) length: {debugPendingJoinCount}
+          </div>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

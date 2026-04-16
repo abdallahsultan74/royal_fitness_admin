@@ -19,19 +19,51 @@ export function ensureAdminAuth(): Promise<boolean> {
 
   adminAuthPromise = (async () => {
     if (!db || !hasFirebaseConfig) return false;
+
+    const isAdminForCurrentSession = async (): Promise<boolean> => {
+      try {
+        const resp = await db.rpc("is_admin");
+        if (resp?.error) return false;
+        const data = resp?.data;
+        if (typeof data === "boolean") return data;
+        if (Array.isArray(data)) {
+          const first = data[0];
+          if (typeof first === "boolean") return first;
+          if (first && typeof first === "object" && "is_admin" in (first as any)) {
+            return Boolean((first as any).is_admin);
+          }
+          return false;
+        }
+        if (data && typeof data === "object" && "is_admin" in (data as any)) {
+          return Boolean((data as any).is_admin);
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    };
+
+    // 1) If we already have a session, validate it with RLS by calling is_admin()
     const current = await db.auth.getSession();
-    if (current.data.session?.user) return true;
+    if (current.data.session?.user) {
+      return isAdminForCurrentSession();
+    }
+
+    // 2) Otherwise, sign in with admin credentials (from Vercel env)
     if (!adminEmail || !adminPassword) return false;
     try {
       const result = await db.auth.signInWithPassword({
         email: adminEmail,
         password: adminPassword,
       });
-      return !result.error;
+      if (result.error) return false;
+      return isAdminForCurrentSession();
     } catch {
       return false;
     }
-  })();
+  })().finally(() => {
+    adminAuthPromise = null;
+  });
 
   return adminAuthPromise;
 }
