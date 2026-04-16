@@ -141,7 +141,7 @@ export function UserManagement() {
     { label: t("إجمالي المستخدمين", "Total Users"), value: users.length, color: "text-[#F5EAD4]" },
     { label: t("أعضاء بريميوم", "Pro Members"), value: users.filter((u) => u.plan === planPro).length, color: "text-[#D4AF37]" },
     { label: t("فترة تجريبية", "On Trial"), value: users.filter((u) => u.plan === planTrial).length, color: "text-emerald-400" },
-    { label: t("محظورون", "Blocked"), value: users.filter((u) => u.status === statusBlocked).length, color: "text-red-400" },
+    { label: t("غير متصلين", "Offline"), value: users.filter((u) => !isActiveStatus(u.status)).length, color: "text-slate-300" },
   ];
 
   const headers = lang === "ar"
@@ -154,7 +154,7 @@ export function UserManagement() {
   };
 
   const handleToggleStatus = async (userId: string | number, currentStatus: string) => {
-    const nextStatus = currentStatus === statusActive ? statusBlocked : statusActive;
+    const nextStatus = isActiveStatus(currentStatus) ? statusOffline : statusActive;
 
     if (!live || !db || !hasFirebaseConfig || typeof userId !== "string") {
       setUsers((prev) =>
