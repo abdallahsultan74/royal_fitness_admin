@@ -29,7 +29,7 @@ function LayoutInner() {
             type="button"
             aria-label="Close menu"
             onClick={() => setMobileSidebarOpen(false)}
-            className="fixed inset-0 z-30 bg-black/50 md:hidden"
+            className="fixed inset-0 z-30 bg-black/50"
           />
         )}
         <div className="flex-1 flex flex-col min-w-0">
