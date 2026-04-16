@@ -28,11 +28,13 @@ export function Dashboard() {
   const [revenue, setRevenue] = useState<number | null>(null);
   const [recentUsers, setRecentUsers] = useState<{ name: string; plan: string; time: string }[]>([]);
   const [chartData, setChartData] = useState<{ month: string; users: number; revenue: number }[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<number | null>(null);
 
   useEffect(() => {
     if (!db || !hasFirebaseConfig) return;
     let usersChannel: ReturnType<typeof db.channel> | null = null;
     let exercisesChannel: ReturnType<typeof db.channel> | null = null;
+    let requestsChannel: ReturnType<typeof db.channel> | null = null;
     let cancelled = false;
 
     const loadDashboard = async () => {
@@ -52,6 +54,8 @@ export function Dashboard() {
       setUsersCount(users.length);
       const exercisesResp = await db.from("exercises").select("id");
       setExercisesCount((exercisesResp.data ?? []).length);
+      const requestsResp = await db.from("subscription_requests").select("id").eq("status", "pending");
+      setPendingRequests((requestsResp.data ?? []).length);
 
       const revenueTotal = users.reduce((sum, user) => {
         const plan = String(user.plan).toLowerCase();
@@ -125,12 +129,21 @@ export function Dashboard() {
           () => loadDashboard(),
         )
         .subscribe();
+      requestsChannel = db
+        .channel("subscription-requests-dashboard")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "subscription_requests" },
+          () => loadDashboard(),
+        )
+        .subscribe();
     });
 
     return () => {
       cancelled = true;
       if (usersChannel) db.removeChannel(usersChannel);
       if (exercisesChannel) db.removeChannel(exercisesChannel);
+      if (requestsChannel) db.removeChannel(requestsChannel);
     };
   }, [isRTL, t]);
 
@@ -167,7 +180,7 @@ export function Dashboard() {
     { label: t("إجمالي المستخدمين", "Total Users"), value: usersCount ?? 12847, change: t("مباشر", "Live"), up: true, icon: Users },
     { label: t("إيرادات الاشتراكات", "Subscription Revenue"), value: `$${revenue ?? 48290}`, change: t("تقديري", "Estimated"), up: true, icon: DollarSign },
     { label: t("التمارين النشطة", "Active Exercises"), value: exercisesCount ?? 34, change: t("مباشر", "Live"), up: true, icon: Trophy },
-    { label: t("البلاغات", "Reported Issues"), value: 7, change: "-23%", up: false, icon: AlertTriangle },
+    { label: t("طلبات الاشتراك", "Subscription Requests"), value: pendingRequests ?? 0, change: t("قيد المراجعة", "Pending"), up: false, icon: AlertTriangle },
   ];
   const tableRecentUsers = recentUsers.length ? recentUsers : fallbackRecentUsers;
   const renderedChartData = chartData.length ? chartData : fallbackChartData;

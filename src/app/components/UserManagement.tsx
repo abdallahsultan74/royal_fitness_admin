@@ -117,7 +117,16 @@ export function UserManagement() {
   const planPro = t("بريميوم", "Pro");
   const planTrial = t("تجريبي", "Trial");
   const statusActive = t("نشط", "Active");
-  const statusBlocked = t("محظور", "Blocked");
+  const statusOffline = t("غير متصل", "Offline");
+  const normalizeStatus = (status: string) => status.trim().toLowerCase();
+  const isActiveStatus = (status: string) => {
+    const normalized = normalizeStatus(status);
+    return normalized === "active" || normalized === "نشط";
+  };
+  const formatStatusLabel = (status: string) => {
+    if (isActiveStatus(status)) return statusActive;
+    return statusOffline;
+  };
 
   const filtered = useMemo(() => users.filter(
     (u) => !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
@@ -240,8 +249,10 @@ export function UserManagement() {
                 <td className="px-4 py-3 text-muted-foreground" style={{ fontSize: 13 }}>{u.lastActive}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${u.status === statusActive ? "bg-emerald-400" : "bg-red-400"}`} />
-                    <span className={u.status === statusActive ? "text-emerald-400" : "text-red-400"} style={{ fontSize: 12 }}>{u.status}</span>
+                    <span className={`w-2 h-2 rounded-full ${isActiveStatus(u.status) ? "bg-cyan-400" : "bg-slate-400"}`} />
+                    <span className={isActiveStatus(u.status) ? "text-cyan-400" : "text-slate-400"} style={{ fontSize: 12 }}>
+                      {formatStatusLabel(u.status)}
+                    </span>
                   </div>
                 </td>
                 <td className="px-4 py-3">
@@ -257,9 +268,9 @@ export function UserManagement() {
                       onClick={() => handleToggleStatus(u.id, u.status)}
                       disabled={pendingId === u.id}
                       className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-red-400 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                      title={u.status === statusActive ? t("حظر", "Block") : t("إلغاء الحظر", "Unblock")}
+                      title={isActiveStatus(u.status) ? t("حظر", "Block") : t("إلغاء الحظر", "Unblock")}
                     >
-                      {u.status === statusActive ? <ShieldOff className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
+                      {isActiveStatus(u.status) ? <ShieldOff className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
                     </button>
                     <button className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-[#F5EAD4] transition-colors cursor-pointer">
                       <MoreHorizontal className="w-4 h-4" />

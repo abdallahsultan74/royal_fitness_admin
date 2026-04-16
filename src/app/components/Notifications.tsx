@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp, updateDoc, doc } from "firebase/firestore";
 import { useLang } from "./LanguageContext";
-import { db, hasFirebaseConfig } from "../firebase";
+import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
 
 type NotificationItem = {
   id: string | number;
@@ -39,21 +38,36 @@ export function Notifications() {
 
   useEffect(() => {
     if (!db || !hasFirebaseConfig) return;
-    const unsub = onSnapshot(query(collection(db, "notifications"), orderBy("createdAt", "desc")), (snapshot) => {
-      const mapped = snapshot.docs.map((item) => {
-        const data = item.data() as Partial<NotificationItem> & { createdAt?: { toDate?: () => Date } };
-        return {
-          id: item.id,
-          title: data.title ?? t("إشعار", "Notification"),
-          body: data.body ?? "",
-          read: Boolean(data.read),
-          createdAt: data.createdAt?.toDate?.().toISOString() ?? new Date().toISOString(),
-        } satisfies NotificationItem;
-      });
+    let channel: ReturnType<typeof db.channel> | null = null;
+    let cancelled = false;
+
+    const loadNotifications = async () => {
+      const resp = await db.from("admin_notifications").select("*").order("created_at", { ascending: false });
+      const rows = resp.data ?? [];
+      const mapped = rows.map((data) => ({
+        id: data.id,
+        title: data.title?.toString() ?? t("إشعار", "Notification"),
+        body: data.body?.toString() ?? "",
+        read: Boolean(data.read),
+        createdAt: data.created_at?.toString() ?? new Date().toISOString(),
+      }));
       setItems(mapped.length ? mapped : fallbackNotifications);
       setLive(mapped.length > 0);
+    };
+
+    ensureAdminAuth().then((authed) => {
+      if (!authed || cancelled) return;
+      loadNotifications();
+      channel = db
+        .channel("admin-notifications-live")
+        .on("postgres_changes", { event: "*", schema: "public", table: "admin_notifications" }, () => loadNotifications())
+        .subscribe();
     });
-    return () => unsub();
+
+    return () => {
+      cancelled = true;
+      if (channel) db.removeChannel(channel);
+    };
   }, [fallbackNotifications, t]);
 
   useEffect(() => {
@@ -81,11 +95,12 @@ export function Notifications() {
       return;
     }
 
-    await addDoc(collection(db, "notifications"), {
+    await ensureAdminAuth();
+    await db.from("admin_notifications").insert({
       title: title.trim(),
       body: body.trim(),
       read: false,
-      createdAt: serverTimestamp(),
+      type: "manual",
     });
     setTitle("");
     setBody("");
@@ -96,7 +111,8 @@ export function Notifications() {
       setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)));
       return;
     }
-    await updateDoc(doc(db, "notifications", item.id), { read: true });
+    await ensureAdminAuth();
+    await db.from("admin_notifications").update({ read: true }).eq("id", item.id);
   };
 
   return (

@@ -27,6 +27,8 @@ export function Login() {
     } catch (err) {
       if (err instanceof Error && err.message === "Missing credentials") {
         setError(t("يرجى إدخال البريد وكلمة المرور.", "Please enter email and password."));
+      } else if (err instanceof Error && err.message === "SUPABASE_NOT_CONFIGURED") {
+        setError(t("إعدادات Supabase غير مكتملة.", "Supabase configuration is missing."));
       } else {
         setError(t("فشل تسجيل الدخول، تحقق من البيانات.", "Login failed, check your credentials."));
       }

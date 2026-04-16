@@ -4,7 +4,8 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "build": "vite build"
+    "build": "vite build",
+    "sync:exercises": "node scripts/upload_exercises_to_supabase.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

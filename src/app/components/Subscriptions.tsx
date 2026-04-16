@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, query, updateDoc, doc } from "firebase/firestore";
 import { useLang } from "./LanguageContext";
-import { db, hasFirebaseConfig } from "../firebase";
+import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
 
 type Subscription = {
   id: string | number;
@@ -11,6 +10,7 @@ type Subscription = {
   status: string;
   amount: number;
   renewDate: string;
+  note?: string;
 };
 
 const fallbackSubscriptions: Subscription[] = [
@@ -32,25 +32,42 @@ export function Subscriptions() {
       setLive(false);
       return;
     }
+    let channel: ReturnType<typeof db.channel> | null = null;
+    let cancelled = false;
 
-    const unsub = onSnapshot(query(collection(db, "subscriptions")), (snapshot) => {
-      const mapped = snapshot.docs.map((item) => {
-        const data = item.data() as Partial<Subscription>;
-        return {
-          id: item.id,
-          userName: data.userName ?? t("مستخدم", "User"),
-          userEmail: data.userEmail ?? "unknown@email.com",
-          plan: data.plan ?? "Basic",
-          status: data.status ?? "active",
-          amount: Number(data.amount ?? 0),
-          renewDate: data.renewDate ?? new Date().toISOString().slice(0, 10),
-        };
-      });
+    const loadRequests = async () => {
+      const resp = await db
+        .from("subscription_requests")
+        .select("id, requested_plan, status, created_at, note, user_id, profiles(name, email)")
+        .order("created_at", { ascending: false });
+      const rows = (resp.data ?? []) as any[];
+      const mapped: Subscription[] = rows.map((data) => ({
+        id: data.id,
+        userName: data.profiles?.name?.toString() ?? t("مستخدم", "User"),
+        userEmail: data.profiles?.email?.toString() ?? "unknown@email.com",
+        plan: data.requested_plan?.toString() ?? "Pro",
+        status: data.status?.toString() ?? "pending",
+        amount: (data.requested_plan?.toString().toLowerCase().includes("basic") ? 19 : 49),
+        renewDate: data.created_at?.toString() ?? new Date().toISOString(),
+        note: data.note?.toString(),
+      }));
       setSubscriptions(mapped.length ? mapped : localizedFallback);
       setLive(mapped.length > 0);
+    };
+
+    ensureAdminAuth().then((authed) => {
+      if (!authed || cancelled) return;
+      loadRequests();
+      channel = db
+        .channel("subscription-requests-live")
+        .on("postgres_changes", { event: "*", schema: "public", table: "subscription_requests" }, () => loadRequests())
+        .subscribe();
     });
 
-    return () => unsub();
+    return () => {
+      cancelled = true;
+      if (channel) db.removeChannel(channel);
+    };
   }, [localizedFallback, t]);
 
   const totalRevenue = useMemo(
@@ -74,21 +91,27 @@ export function Subscriptions() {
 
   const formatStatus = (status: string) => {
     const normalized = status.toLowerCase();
-    if (normalized === "active") return t("نشط", "Active");
+    if (normalized === "active" || normalized === "approved") return t("نشط", "Active");
     if (normalized === "cancelled") return t("ملغي", "Cancelled");
+    if (normalized === "pending") return t("قيد المراجعة", "Pending");
+    if (normalized === "rejected") return t("مرفوض", "Rejected");
     if (normalized === "trial") return t("تجريبي", "Trial");
     return status;
   };
 
   const toggleStatus = async (item: Subscription) => {
-    const next = item.status === "active" ? "cancelled" : "active";
+    const next = item.status === "approved" ? "rejected" : "approved";
     if (!live || !db || !hasFirebaseConfig || typeof item.id !== "string") {
       setSubscriptions((prev) => prev.map((s) => (s.id === item.id ? { ...s, status: next } : s)));
       return;
     }
     try {
       setPendingId(item.id);
-      await updateDoc(doc(db, "subscriptions", item.id), { status: next });
+      await ensureAdminAuth();
+      await db.from("subscription_requests").update({ status: next }).eq("id", item.id);
+      if (next === "approved") {
+        await db.from("profiles").update({ plan: item.plan.toLowerCase(), status: "active" }).eq("email", item.userEmail);
+      }
     } finally {
       setPendingId(null);
     }
@@ -113,7 +136,7 @@ export function Subscriptions() {
         </div>
         <div className="rounded-xl border border-border bg-card p-4">
           <p className="text-muted-foreground" style={{ fontSize: 12 }}>{t("الاشتراكات النشطة", "Active subscriptions")}</p>
-          <p className="text-emerald-400" style={{ fontSize: 24, fontWeight: 600 }}>{subscriptions.filter((s) => s.status === "active").length}</p>
+          <p className="text-emerald-400" style={{ fontSize: 24, fontWeight: 600 }}>{subscriptions.filter((s) => s.status === "approved" || s.status === "active").length}</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-4">
           <p className="text-muted-foreground" style={{ fontSize: 12 }}>{t("إيراد شهري تقديري", "Estimated monthly revenue")}</p>
@@ -139,7 +162,7 @@ export function Subscriptions() {
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">{formatPlan(s.plan)}</td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded-full ${s.status === "active" ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`} style={{ fontSize: 11 }}>
+                  <span className={`px-2 py-0.5 rounded-full ${s.status === "approved" || s.status === "active" ? "bg-emerald-500/10 text-emerald-400" : s.status === "pending" ? "bg-amber-500/10 text-amber-400" : "bg-red-500/10 text-red-400"}`} style={{ fontSize: 11 }}>
                     {formatStatus(s.status)}
                   </span>
                 </td>
@@ -154,7 +177,7 @@ export function Subscriptions() {
                     className="px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-[#D4AF37] hover:border-[#D4AF37]/30 disabled:opacity-50"
                     style={{ fontSize: 12 }}
                   >
-                    {s.status === "active" ? t("إلغاء", "Cancel") : t("تفعيل", "Activate")}
+                    {s.status === "approved" ? t("رفض", "Reject") : t("تفعيل", "Approve")}
                   </button>
                 </td>
               </tr>
