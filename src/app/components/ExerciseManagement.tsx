@@ -60,6 +60,8 @@ type ExerciseItem = {
   gifUrl?: string;
   mediaType?: "image" | "video";
   audioUrl?: string;
+  ttsScript?: string;
+  ttsScriptAr?: string;
 };
 type ExerciseFormState = {
   name: string;
@@ -68,6 +70,8 @@ type ExerciseFormState = {
   difficulty: string;
   gifUrl: string;
   audioUrl: string;
+  ttsScript: string;
+  ttsScriptAr: string;
 };
 
 function FilterSelect({ label, options, value, onChange }: { label: string; options: string[]; value: string; onChange: (v: string) => void }) {
@@ -108,6 +112,8 @@ export function ExerciseManagement() {
     difficulty: fd.difficulty[1] ?? fd.all,
     gifUrl: "",
     audioUrl: "",
+    ttsScript: "",
+    ttsScriptAr: "",
   });
   const [selectedMediaFile, setSelectedMediaFile] = useState<File | null>(null);
   const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
@@ -139,6 +145,8 @@ export function ExerciseManagement() {
           gifUrl: data.media_url?.toString() ?? data.image_asset_path?.toString(),
           mediaType: (data.media_type?.toString() === "video" ? "video" : "image"),
           audioUrl: data.audio_url?.toString(),
+          ttsScript: data.tts_script?.toString(),
+          ttsScriptAr: data.tts_script_ar?.toString(),
         };
       });
       setExercises(mapped.length ? mapped : exercisesFallback[lang]);
@@ -197,6 +205,8 @@ export function ExerciseManagement() {
       difficulty: fd.difficulty[1] ?? fd.all,
       gifUrl: "",
       audioUrl: "",
+      ttsScript: "",
+      ttsScriptAr: "",
     });
     setActiveExercise(null);
     setSelectedMediaFile(null);
@@ -212,6 +222,8 @@ export function ExerciseManagement() {
       difficulty: exercise.difficulty,
       gifUrl: exercise.gifUrl ?? "",
       audioUrl: exercise.audioUrl ?? "",
+      ttsScript: exercise.ttsScript ?? "",
+      ttsScriptAr: exercise.ttsScriptAr ?? "",
     });
     setActiveExercise(exercise);
     setSelectedMediaFile(null);
@@ -261,6 +273,8 @@ export function ExerciseManagement() {
       difficulty: form.difficulty.trim(),
       gifUrl: form.gifUrl.trim(),
       audioUrl: form.audioUrl.trim(),
+      ttsScript: form.ttsScript.trim(),
+      ttsScriptAr: form.ttsScriptAr.trim(),
     };
     if (!input.name) return;
     if (!validateSelectedFile(selectedMediaFile) || !validateSelectedFile(selectedAudioFile)) return;
@@ -275,6 +289,9 @@ export function ExerciseManagement() {
         source: lang === "ar" ? "يدوي" : "Manual",
         gif: "🏋️",
         gifUrl: input.gifUrl,
+        audioUrl: input.audioUrl,
+        ttsScript: input.ttsScript,
+        ttsScriptAr: input.ttsScriptAr,
       };
       setExercises((prev) => [localExercise, ...prev]);
       resetModalState();
@@ -310,6 +327,8 @@ export function ExerciseManagement() {
       media_url: mediaUrl,
       media_type: mediaType,
       audio_url: audioUrl,
+      tts_script: input.ttsScript || null,
+      tts_script_ar: input.ttsScriptAr || null,
       source: "Admin",
     });
     resetModalState();
@@ -325,6 +344,8 @@ export function ExerciseManagement() {
       difficulty: form.difficulty.trim(),
       gifUrl: form.gifUrl.trim(),
       audioUrl: form.audioUrl.trim(),
+      ttsScript: form.ttsScript.trim(),
+      ttsScriptAr: form.ttsScriptAr.trim(),
     };
     if (!input.name) return;
     if (!validateSelectedFile(selectedMediaFile) || !validateSelectedFile(selectedAudioFile)) return;
@@ -361,6 +382,8 @@ export function ExerciseManagement() {
         media_url: mediaUrl,
         media_type: mediaType,
         audio_url: audioUrl,
+        tts_script: input.ttsScript || null,
+        tts_script_ar: input.ttsScriptAr || null,
       }).eq("id", exercise.id);
       resetModalState();
     } finally {
@@ -528,6 +551,8 @@ export function ExerciseManagement() {
                 <p><span className="text-[#F5EAD4]">{t("الأدوات", "Equipment")}:</span> {activeExercise.equipment}</p>
                 {activeExercise.gifUrl ? <p className="break-all"><span className="text-[#F5EAD4]">{t("رابط الميديا", "Media URL")}:</span> {activeExercise.gifUrl}</p> : null}
                 {activeExercise.audioUrl ? <p className="break-all"><span className="text-[#F5EAD4]">{t("رابط الصوت", "Audio URL")}:</span> {activeExercise.audioUrl}</p> : null}
+                {activeExercise.ttsScript ? <p className="break-words"><span className="text-[#F5EAD4]">{t("نص النطق", "TTS script")}:</span> {activeExercise.ttsScript}</p> : null}
+                {activeExercise.ttsScriptAr ? <p className="break-words"><span className="text-[#F5EAD4]">{t("نص النطق العربي", "Arabic TTS script")}:</span> {activeExercise.ttsScriptAr}</p> : null}
               </div>
             ) : (
               <>
@@ -563,6 +588,26 @@ export function ExerciseManagement() {
                     <input value={form.audioUrl} onChange={(e) => setForm((prev) => ({ ...prev, audioUrl: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-secondary border border-border" />
                   </div>
                 </div>
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("نص النطق للتطبيق (اختياري)", "TTS script for app (optional)")}</label>
+                    <textarea
+                      value={form.ttsScript}
+                      onChange={(e) => setForm((prev) => ({ ...prev, ttsScript: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg bg-secondary border border-border min-h-24"
+                      placeholder={t("اكتب النص الذي تريد نطقه للمستخدم أثناء التمرين", "Write the text you want spoken during the exercise")}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("نص النطق العربي (اختياري)", "Arabic TTS script (optional)")}</label>
+                    <textarea
+                      value={form.ttsScriptAr}
+                      onChange={(e) => setForm((prev) => ({ ...prev, ttsScriptAr: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg bg-secondary border border-border min-h-24"
+                      placeholder={t("اكتب النص العربي الذي سيتم نطقه للمستخدم", "Write the Arabic text that will be spoken to the user")}
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("رفع صورة/فيديو (حد 10MB)", "Upload image/video (max 10MB)")}</label>
@@ -572,6 +617,11 @@ export function ExerciseManagement() {
                       onChange={(e) => setSelectedMediaFile(e.target.files?.[0] ?? null)}
                       className="w-full text-muted-foreground"
                     />
+                    <p className="text-muted-foreground mt-1" style={{ fontSize: 11 }}>
+                      {selectedMediaFile
+                        ? `${selectedMediaFile.name} - ${(selectedMediaFile.size / (1024 * 1024)).toFixed(2)}MB`
+                        : t("يمكنك رفع صورة أو فيديو أو استخدام رابط الميديا بالأعلى", "You can upload an image/video or use the media URL above")}
+                    </p>
                   </div>
                   <div>
                     <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("رفع ملف صوتي (حد 10MB)", "Upload audio (max 10MB)")}</label>
@@ -581,6 +631,11 @@ export function ExerciseManagement() {
                       onChange={(e) => setSelectedAudioFile(e.target.files?.[0] ?? null)}
                       className="w-full text-muted-foreground"
                     />
+                    <p className="text-muted-foreground mt-1" style={{ fontSize: 11 }}>
+                      {selectedAudioFile
+                        ? `${selectedAudioFile.name} - ${(selectedAudioFile.size / (1024 * 1024)).toFixed(2)}MB`
+                        : t("اختياري: ملف صوتي جاهز للتشغيل داخل التطبيق", "Optional: ready-made audio file for the app")}
+                    </p>
                   </div>
                 </div>
               </>
