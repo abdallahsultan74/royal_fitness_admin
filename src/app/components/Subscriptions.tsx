@@ -4,6 +4,7 @@ import { db, ensureStaffAuth, hasFirebaseConfig, isLocalAuthMode } from "../fire
 
 type Subscription = {
   id: string | number;
+  userId: string;
   userName: string;
   userEmail: string;
   plan: string;
@@ -11,6 +12,8 @@ type Subscription = {
   amount: number;
   renewDate: string;
   note?: string;
+  kind: "activate" | "renew";
+  durationDays: number;
 };
 
 const fallbackSubscriptions: Subscription[] = [
@@ -46,7 +49,7 @@ export function Subscriptions() {
       try {
         const resp = await db
           .from("subscription_requests")
-          .select("id, requested_plan, status, created_at, note, user_id")
+          .select("id, requested_plan, status, created_at, note, user_id, request_kind, duration_days")
           .order("created_at", { ascending: false });
         // Important: supabase-js does not always throw on permission errors.
         if (resp.error) {
@@ -82,6 +85,7 @@ export function Subscriptions() {
           const prof = uid ? profilesById.get(uid) : null;
           return {
             id: data.id,
+            userId: uid ?? "",
             userName: prof?.name?.toString() ?? t("مستخدم", "User"),
             userEmail: prof?.email?.toString() ?? "unknown@email.com",
             plan: data.requested_plan?.toString() ?? "Pro",
@@ -89,6 +93,8 @@ export function Subscriptions() {
             amount: (data.requested_plan?.toString().toLowerCase().includes("basic") ? 19 : 49),
             renewDate: data.created_at?.toString() ?? new Date().toISOString(),
             note: data.note?.toString(),
+            kind: (String(data.request_kind ?? "activate").toLowerCase() === "renew" ? "renew" : "activate"),
+            durationDays: Number(data.duration_days ?? 30) || 30,
           };
         });
 
@@ -234,9 +240,50 @@ export function Subscriptions() {
     try {
       setPendingId(item.id);
       await ensureStaffAuth();
+      const session = await db.auth.getSession();
+      const senderId = session.data.session?.user?.id ?? null;
+
       await db.from("subscription_requests").update({ status: next }).eq("id", item.id);
+
       if (next === "approved") {
-        await db.from("profiles").update({ plan: item.plan.toLowerCase(), status: "active" }).eq("email", item.userEmail);
+        const planLower = item.plan.toLowerCase();
+        // Activation: set expiry from now. Renewal: extend from max(now, current expiry).
+        const nowIso = new Date().toISOString();
+        let base: Date | null = null;
+        if (item.kind === "renew") {
+          const profResp = await db.from("profiles").select("plan_expires_at").eq("id", item.userId).maybeSingle();
+          const cur = profResp.data?.plan_expires_at ? new Date(profResp.data.plan_expires_at) : null;
+          base = (cur && cur.getTime() > Date.now()) ? cur : new Date();
+        } else {
+          base = new Date();
+        }
+        const nextExpiry = new Date(base.getTime() + item.durationDays * 24 * 60 * 60 * 1000).toISOString();
+
+        await db
+          .from("profiles")
+          .update({ plan: planLower, status: "active", plan_expires_at: nextExpiry })
+          .eq("id", item.userId);
+
+        // Notify user on approval.
+        await db.from("user_notifications").insert({
+          user_id: item.userId,
+          sender_id: senderId,
+          type: "notification",
+          title: item.kind === "renew" ? "Subscription renewed" : "Subscription activated",
+          body:
+            item.kind === "renew"
+              ? `Your subscription has been renewed for ${item.durationDays} days.`
+              : `Your subscription has been activated for ${item.durationDays} days.`,
+        });
+      } else {
+        // Notify user on rejection.
+        await db.from("user_notifications").insert({
+          user_id: item.userId,
+          sender_id: senderId,
+          type: "notification",
+          title: item.kind === "renew" ? "Renewal rejected" : "Request rejected",
+          body: "Your subscription request was rejected. Please contact support if needed.",
+        });
       }
       await db.from("admin_notifications").insert({
         type: "subscription_request_update",
