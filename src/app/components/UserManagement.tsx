@@ -349,11 +349,15 @@ export function UserManagement() {
                     });
                     if (res.error) {
                       let detail = String(res.error.message ?? res.error);
-                      const ctx = (res.error as { context?: Response }).context;
-                      if (ctx && typeof ctx.json === "function") {
+                      const anyErr = res.error as any;
+                      const resp: Response | undefined =
+                        anyErr?.context?.response ??
+                        (typeof anyErr?.context?.json === "function" ? anyErr.context : undefined);
+                      if (resp && typeof (resp as any).json === "function") {
                         try {
-                          const j = (await ctx.json()) as { error?: string };
+                          const j = (await (resp as any).json()) as { error?: string; details?: unknown };
                           if (j?.error) detail = `${detail}: ${j.error}`;
+                          if (j?.details) detail = `${detail} (${JSON.stringify(j.details)})`;
                         } catch {
                           /* ignore */
                         }

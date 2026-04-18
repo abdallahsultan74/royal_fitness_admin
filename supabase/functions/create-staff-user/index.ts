@@ -68,7 +68,7 @@ serve(async (req) => {
     const isAdminResp = await authed.rpc("is_admin");
     const isAdmin = Boolean(isAdminResp?.data);
     if (!isAdmin) {
-      return new Response(JSON.stringify({ error: "FORBIDDEN" }), {
+      return new Response(JSON.stringify({ error: "FORBIDDEN", details: { is_admin: isAdminResp?.data } }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -84,7 +84,10 @@ serve(async (req) => {
     });
     if (createResp.error || !createResp.data?.user) {
       return new Response(
-        JSON.stringify({ error: createResp.error?.message ?? "CREATE_FAILED" }),
+        JSON.stringify({
+          error: createResp.error?.message ?? "CREATE_FAILED",
+          details: { code: (createResp.error as any)?.code, status: (createResp.error as any)?.status },
+        }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -106,7 +109,7 @@ serve(async (req) => {
       { onConflict: "id" },
     );
     if (upsertResp.error) {
-      return new Response(JSON.stringify({ error: upsertResp.error.message }), {
+      return new Response(JSON.stringify({ error: upsertResp.error.message, details: { code: (upsertResp.error as any)?.code } }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
