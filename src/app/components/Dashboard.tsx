@@ -20,7 +20,7 @@ import {
   AreaChart,
 } from "recharts";
 import { useLang } from "./LanguageContext";
-import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
+import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
 import { useNavigate } from "react-router";
 
 export function Dashboard() {
@@ -36,6 +36,7 @@ export function Dashboard() {
   const [avgBmi, setAvgBmi] = useState<number | null>(null);
   const [todayWeightLogs, setTodayWeightLogs] = useState<number | null>(null);
   const [activeChallenges, setActiveChallenges] = useState<number | null>(null);
+  const [dataLive, setDataLive] = useState(false);
 
   useEffect(() => {
     if (!db || !hasFirebaseConfig) return;
@@ -47,6 +48,11 @@ export function Dashboard() {
     const loadDashboard = async () => {
       if (!db) return;
       const usersResp = await db.from("profiles").select("*");
+      if (usersResp.error) {
+        console.error("[Dashboard] profiles", usersResp.error);
+        setDataLive(false);
+        return;
+      }
       const usersRaw = usersResp.data ?? [];
       const progressResp = await db.rpc("api_admin_user_progress_summary");
       const progressRows = (progressResp.data ?? []) as any[];
@@ -132,10 +138,14 @@ export function Dashboard() {
           revenue: bucket.revenue,
         })),
       );
+      setDataLive(true);
     };
 
-    ensureAdminAuth().then((authed) => {
-      if (!authed || cancelled) return;
+    ensureStaffAuth().then((authed) => {
+      if (!authed || cancelled) {
+        setDataLive(false);
+        return;
+      }
       loadDashboard();
 
       usersChannel = db
@@ -224,7 +234,11 @@ export function Dashboard() {
           {t(
             "مرحباً بعودتك، مدير النظام. إليك نظرة عامة على إمبراطورية اللياقة الخاصة بك.",
             "Welcome back, Royal Admin. Here's your fitness empire overview."
-          )}
+          )}{" "}
+          ·{" "}
+          <span className={dataLive ? "text-emerald-400" : "text-amber-400"}>
+            {dataLive ? t("بيانات حية + Realtime", "Live data + realtime") : t("في انتظار الاتصال…", "Waiting for data…")}
+          </span>
         </p>
       </div>
 

@@ -1,29 +1,51 @@
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp, updateDoc, doc } from "firebase/firestore";
 import { useLang } from "./LanguageContext";
-import { db, hasFirebaseConfig } from "../firebase";
+import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
+
+const STORAGE_KEY = "royal_support_tickets_v1";
 
 type Ticket = {
-  id: string | number;
+  id: string;
   user: string;
   subject: string;
   status: "open" | "resolved";
   message: string;
+  createdAt?: string;
 };
+
+function loadTickets(fallback: Ticket[]): Ticket[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Ticket[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return fallback;
+    return parsed;
+  } catch {
+    return fallback;
+  }
+}
+
+function persistTickets(rows: Ticket[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+  } catch {
+    /* ignore */
+  }
+}
 
 export function Support() {
   const { t } = useLang();
   const fallbackTickets: Ticket[] = useMemo(
     () => [
       {
-        id: 1,
+        id: "demo-1",
         user: t("أحمد حسن", "Ahmed Hassan"),
         subject: t("مشكلة دفع", "Payment issue"),
         status: "open",
         message: t("تم خصم الاشتراك مرتين.", "My renewal was charged twice."),
       },
       {
-        id: 2,
+        id: "demo-2",
         user: t("سارة الراشد", "Sara Al-Rashid"),
         subject: t("مشكلة تسجيل الدخول", "Login issue"),
         status: "resolved",
@@ -36,70 +58,55 @@ export function Support() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [live, setLive] = useState(false);
-  const [pendingId, setPendingId] = useState<string | number | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!db || !hasFirebaseConfig) return;
-    const unsub = onSnapshot(query(collection(db, "support_tickets"), orderBy("createdAt", "desc")), (snapshot) => {
-      const mapped = snapshot.docs.map((item) => {
-        const data = item.data() as Partial<Ticket>;
-        return {
-          id: item.id,
-          user: data.user ?? t("مستخدم التطبيق", "App User"),
-          subject: data.subject ?? t("مشكلة عامة", "General issue"),
-          status: data.status === "resolved" ? "resolved" : "open",
-          message: data.message ?? "",
-        } satisfies Ticket;
-      });
-      setTickets(mapped.length ? mapped : fallbackTickets);
-      setLive(mapped.length > 0);
+    if (!db || !hasFirebaseConfig) {
+      setTickets(loadTickets(fallbackTickets));
+      setLive(false);
+      return;
+    }
+    let cancelled = false;
+    ensureStaffAuth().then((ok) => {
+      if (cancelled) return;
+      if (ok) {
+        setLive(true);
+        const stored = loadTickets(fallbackTickets);
+        setTickets(stored.length ? stored : fallbackTickets);
+      } else {
+        setLive(false);
+        setTickets(fallbackTickets);
+      }
     });
-    return () => unsub();
+    return () => {
+      cancelled = true;
+    };
   }, [fallbackTickets]);
 
   useEffect(() => {
-    if (!live) {
-      setTickets(fallbackTickets);
-    }
-  }, [fallbackTickets, live]);
+    if (live && tickets.length > 0) persistTickets(tickets);
+  }, [tickets, live]);
 
   const createTicket = async () => {
     if (!subject.trim() || !message.trim()) return;
     const next: Ticket = {
-      id: `local-${Date.now()}`,
+      id: `t-${Date.now()}`,
       user: t("مدير النظام", "Admin"),
       subject: subject.trim(),
       status: "open",
       message: message.trim(),
+      createdAt: new Date().toISOString(),
     };
-
-    if (!live || !db || !hasFirebaseConfig) {
-      setTickets((prev) => [next, ...prev]);
-      setSubject("");
-      setMessage("");
-      return;
-    }
-
-    await addDoc(collection(db, "support_tickets"), {
-      user: t("مدير النظام", "Admin"),
-      subject: subject.trim(),
-      message: message.trim(),
-      status: "open",
-      createdAt: serverTimestamp(),
-    });
+    setTickets((prev) => [next, ...prev]);
     setSubject("");
     setMessage("");
   };
 
   const resolveTicket = async (ticket: Ticket) => {
     const nextStatus: Ticket["status"] = ticket.status === "open" ? "resolved" : "open";
-    if (!live || !db || !hasFirebaseConfig || typeof ticket.id !== "string") {
-      setTickets((prev) => prev.map((item) => (item.id === ticket.id ? { ...item, status: nextStatus } : item)));
-      return;
-    }
+    setPendingId(String(ticket.id));
     try {
-      setPendingId(ticket.id);
-      await updateDoc(doc(db, "support_tickets", ticket.id), { status: nextStatus, updatedAt: serverTimestamp() });
+      setTickets((prev) => prev.map((item) => (item.id === ticket.id ? { ...item, status: nextStatus } : item)));
     } finally {
       setPendingId(null);
     }
@@ -113,7 +120,12 @@ export function Support() {
       <div className="min-w-0">
         <h1 className="text-xl text-[#F5EAD4] sm:text-2xl">{t("الدعم الفني", "Support")}</h1>
         <p className="text-muted-foreground text-sm sm:text-[14px]">
-          {t("إدارة تذاكر المستخدمين والتواصل", "Handle user tickets and support workflows")}
+          {t("إدارة تذاكر المستخدمين والتواصل", "Handle user tickets and support workflows")} ·{" "}
+          <span className={live ? "text-emerald-400" : "text-amber-400"}>
+            {live
+              ? t("تذاكر داخلية (المتصفح)", "Internal tickets (browser)")
+              : t("وضع تجريبي", "Demo")}
+          </span>
         </p>
       </div>
 

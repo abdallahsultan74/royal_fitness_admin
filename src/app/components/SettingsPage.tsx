@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { useLang } from "./LanguageContext";
-import { db, hasFirebaseConfig } from "../firebase";
+import { hasFirebaseConfig } from "../firebase";
 
 type SettingsState = {
   appName: string;
@@ -10,12 +9,30 @@ type SettingsState = {
   autoApproveExercises: boolean;
 };
 
+const STORAGE_KEY = "royal_admin_settings";
+
 const defaultSettings: SettingsState = {
   appName: "Royal Fitness",
   supportEmail: "support@royalfitness.com",
   maintenanceMode: false,
   autoApproveExercises: false,
 };
+
+function loadFromStorage(): SettingsState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultSettings;
+    const parsed = JSON.parse(raw) as Partial<SettingsState>;
+    return {
+      appName: typeof parsed.appName === "string" ? parsed.appName : defaultSettings.appName,
+      supportEmail: typeof parsed.supportEmail === "string" ? parsed.supportEmail : defaultSettings.supportEmail,
+      maintenanceMode: Boolean(parsed.maintenanceMode),
+      autoApproveExercises: Boolean(parsed.autoApproveExercises),
+    };
+  } catch {
+    return defaultSettings;
+  }
+}
 
 export function SettingsPage() {
   const { t } = useLang();
@@ -24,40 +41,18 @@ export function SettingsPage() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    if (!db || !hasFirebaseConfig) {
-      const local = localStorage.getItem("royal_admin_settings");
-      if (local) setSettings(JSON.parse(local) as SettingsState);
-      return;
-    }
-    const unsub = onSnapshot(doc(db, "admin_settings", "general"), (snapshot) => {
-      if (!snapshot.exists()) return;
-      const data = snapshot.data() as Partial<SettingsState>;
-      setSettings({
-        appName: data.appName ?? defaultSettings.appName,
-        supportEmail: data.supportEmail ?? defaultSettings.supportEmail,
-        maintenanceMode: Boolean(data.maintenanceMode),
-        autoApproveExercises: Boolean(data.autoApproveExercises),
-      });
-    });
-    return () => unsub();
+    setSettings(loadFromStorage());
   }, []);
 
   const saveSettings = async () => {
     setSaving(true);
     setSaved(false);
-    if (!db || !hasFirebaseConfig) {
-      localStorage.setItem("royal_admin_settings", JSON.stringify(settings));
-      setSaving(false);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
       setSaved(true);
-      return;
+    } finally {
+      setSaving(false);
     }
-    await setDoc(
-      doc(db, "admin_settings", "general"),
-      { ...settings, updatedAt: serverTimestamp() },
-      { merge: true },
-    );
-    setSaving(false);
-    setSaved(true);
   };
 
   return (
@@ -66,6 +61,9 @@ export function SettingsPage() {
         <h1 className="text-xl text-[#F5EAD4] sm:text-2xl">{t("الإعدادات", "Settings")}</h1>
         <p className="text-muted-foreground text-sm sm:text-[14px]">
           {t("إعدادات النظام العامة ولوحات الإدارة", "Global system and admin preferences")}
+          {hasFirebaseConfig
+            ? ` · ${t("محفوظة في هذا المتصفح", "Stored in this browser")}`
+            : ` · ${t("وضع محلي", "Local only")}`}
         </p>
       </div>
 

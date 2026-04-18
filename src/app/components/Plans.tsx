@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Save, Users } from "lucide-react";
 import { useLang } from "./LanguageContext";
-import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
+import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
 
 type PlanRow = {
   id: string;
@@ -22,6 +22,7 @@ export function Plans() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [live, setLive] = useState(false);
 
   // create/edit form
   const [openForm, setOpenForm] = useState(false);
@@ -51,9 +52,19 @@ export function Plans() {
     setLoading(true);
     setAuthError(null);
     try {
-      await ensureAdminAuth();
+      const authed = await ensureStaffAuth();
+      if (!authed) {
+        setLive(false);
+        setPlans([]);
+        return;
+      }
       const resp = await db.from("training_plans").select("*").order("created_at", { ascending: false });
-      if (resp.error) setAuthError(resp.error.message);
+      if (resp.error) {
+        setAuthError(resp.error.message);
+        setLive(false);
+      } else {
+        setLive(true);
+      }
       setPlans((resp.data ?? []) as any);
     } finally {
       setLoading(false);
@@ -63,7 +74,7 @@ export function Plans() {
   const loadUsers = useCallback(async () => {
     if (!db || !hasFirebaseConfig) return;
     try {
-      await ensureAdminAuth();
+      await ensureStaffAuth();
       const resp = await db.from("profiles").select("id, name, email").order("created_at", { ascending: false }).limit(200);
       setUsers((resp.data ?? []) as any);
     } catch {
@@ -73,6 +84,27 @@ export function Plans() {
 
   useEffect(() => {
     loadPlans();
+  }, [loadPlans]);
+
+  useEffect(() => {
+    if (!db || !hasFirebaseConfig) return;
+    let channel: ReturnType<typeof db.channel> | null = null;
+    let cancelled = false;
+    ensureStaffAuth().then((ok) => {
+      if (!ok || cancelled) return;
+      channel = db
+        .channel("training-plans-live")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "training_plans" },
+          () => loadPlans(),
+        )
+        .subscribe();
+    });
+    return () => {
+      cancelled = true;
+      if (channel) db.removeChannel(channel);
+    };
   }, [loadPlans]);
 
   const openCreate = () => {
@@ -96,7 +128,7 @@ export function Plans() {
     setSaving(true);
     setAuthError(null);
     try {
-      await ensureAdminAuth();
+      await ensureStaffAuth();
       const payload: any = {
         title: trimmed,
         description: desc.trim() || null,
@@ -139,7 +171,7 @@ export function Plans() {
     setSaving(true);
     setAuthError(null);
     try {
-      await ensureAdminAuth();
+      await ensureStaffAuth();
       const rows = selectedUserIds.map((uid) => ({ plan_id: assignPlan.id, user_id: uid, status: "active" }));
       const resp = await db.from("plan_assignments").insert(rows);
       if (resp.error) setAuthError(resp.error.message);
@@ -157,7 +189,10 @@ export function Plans() {
         <div>
           <h1 className="text-xl text-[#F5EAD4] sm:text-2xl">{t("إدارة الخطط", "Plans")}</h1>
           <p className="text-muted-foreground text-sm" style={{ fontSize: 13 }}>
-            {t("إنشاء خطط وإسنادها للمستخدمين.", "Create training plans and assign them to users.")}
+            {t("إنشاء خطط وإسنادها للمستخدمين.", "Create training plans and assign them to users.")} ·{" "}
+            <span className={live ? "text-emerald-400" : "text-amber-400"}>
+              {live ? t("متصل + Realtime", "Connected + realtime") : t("غير متصل", "Not connected")}
+            </span>
           </p>
         </div>
         <button
