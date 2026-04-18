@@ -3,6 +3,8 @@ import { Layout } from "./components/Layout";
 import { Dashboard } from "./components/Dashboard";
 import { ExerciseManagement } from "./components/ExerciseManagement";
 import { UserManagement } from "./components/UserManagement";
+import { UserDetailsPage } from "./components/UserDetailsPage";
+import { Plans } from "./components/Plans";
 import { SettingsPage } from "./components/SettingsPage";
 import { Subscriptions } from "./components/Subscriptions";
 import { Notifications } from "./components/Notifications";
@@ -45,6 +47,8 @@ export const router = createBrowserRouter([
       { index: true, Component: Dashboard },
       { path: "exercises", Component: ExerciseManagement },
       { path: "users", Component: UserManagement },
+      { path: "users/:id", Component: UserDetailsPage },
+      { path: "plans", Component: Plans },
       { path: "subscriptions", Component: Subscriptions },
       { path: "analytics", Component: ComingSoon },
       { path: "support", Component: ComingSoon },

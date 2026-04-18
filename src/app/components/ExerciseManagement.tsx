@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Search, Plus, Edit3, Trash2, Eye, ChevronDown, Filter, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Search, Plus, Edit3, Trash2, Eye, ChevronDown, Filter, Upload, Mic, Square, Play, Pause, Trash } from "lucide-react";
 import { useLang } from "./LanguageContext";
 import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
 
@@ -126,6 +126,13 @@ export function ExerciseManagement() {
   });
   const [selectedMediaFile, setSelectedMediaFile] = useState<File | null>(null);
   const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [recordedUrl, setRecordedUrl] = useState<string>("");
+  const [recordedPaused, setRecordedPaused] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<BlobPart[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
   const maxMediaSize = 10 * 1024 * 1024;
 
   useEffect(() => {
@@ -204,6 +211,22 @@ export function ExerciseManagement() {
     setActiveExercise(null);
     setSelectedMediaFile(null);
     setSelectedAudioFile(null);
+    setRecording(false);
+    setRecordedBlob(null);
+    if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    setRecordedUrl("");
+    setRecordedPaused(false);
+    try {
+      recorderRef.current?.stop();
+    } catch {
+      // ignore
+    }
+    recorderRef.current = null;
+    chunksRef.current = [];
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
   };
 
   const openCreateModal = () => {
@@ -220,6 +243,9 @@ export function ExerciseManagement() {
     setActiveExercise(null);
     setSelectedMediaFile(null);
     setSelectedAudioFile(null);
+    setRecordedBlob(null);
+    if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    setRecordedUrl("");
     setModalMode("create");
   };
 
@@ -237,6 +263,9 @@ export function ExerciseManagement() {
     setActiveExercise(exercise);
     setSelectedMediaFile(null);
     setSelectedAudioFile(null);
+    setRecordedBlob(null);
+    if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    setRecordedUrl("");
     setModalMode("edit");
   };
 
@@ -263,6 +292,92 @@ export function ExerciseManagement() {
     }
     const { data } = db.storage.from("exercise-media").getPublicUrl(path);
     return data.publicUrl;
+  };
+
+  const supportedRecorderMime = () => {
+    const prefers = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/mpeg",
+      "audio/ogg;codecs=opus",
+      "audio/ogg",
+    ];
+    for (const m of prefers) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (typeof MediaRecorder !== "undefined" && (MediaRecorder as any).isTypeSupported?.(m)) return m;
+    }
+    return "";
+  };
+
+  const startRecording = async () => {
+    if (recording) return;
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      window.alert(t("المتصفح لا يدعم التسجيل الصوتي", "Your browser doesn't support audio recording"));
+      return;
+    }
+    if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    setRecordedUrl("");
+    setRecordedBlob(null);
+    chunksRef.current = [];
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = supportedRecorderMime();
+      const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recorderRef.current = rec;
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      rec.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        setRecordedBlob(blob);
+        const url = URL.createObjectURL(blob);
+        setRecordedUrl(url);
+        setRecording(false);
+        setRecordedPaused(false);
+        chunksRef.current = [];
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((t) => t.stop());
+          streamRef.current = null;
+        }
+      };
+      rec.start();
+      setRecording(true);
+      setRecordedPaused(false);
+    } catch {
+      window.alert(t("لم يتم السماح بالمايكروفون", "Microphone permission denied"));
+      setRecording(false);
+    }
+  };
+
+  const stopRecording = () => {
+    if (!recording) return;
+    try {
+      recorderRef.current?.stop();
+    } catch {
+      setRecording(false);
+    }
+  };
+
+  const togglePauseRecording = () => {
+    const rec = recorderRef.current;
+    if (!rec) return;
+    if (rec.state === "recording") {
+      rec.pause();
+      setRecordedPaused(true);
+    } else if (rec.state === "paused") {
+      rec.resume();
+      setRecordedPaused(false);
+    }
+  };
+
+  const discardRecording = () => {
+    if (recording) stopRecording();
+    setRecordedBlob(null);
+    if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    setRecordedUrl("");
+    setRecordedPaused(false);
   };
 
   const validateSelectedFile = (file: File | null) => {
@@ -320,6 +435,11 @@ export function ExerciseManagement() {
       if (selectedAudioFile) {
         audioUrl = await uploadFile(selectedAudioFile, "audio");
       }
+      if (!audioUrl && recordedBlob) {
+        const ext = (recorderRef.current?.mimeType || "audio/webm").includes("mp4") ? "m4a" : "webm";
+        const recordedFile = new File([recordedBlob], `coach-recording.${ext}`, { type: recordedBlob.type || "audio/webm" });
+        audioUrl = await uploadFile(recordedFile, "audio");
+      }
     } finally {
       setBusyUpload(false);
     }
@@ -338,6 +458,7 @@ export function ExerciseManagement() {
       audio_url: audioUrl,
       tts_script: input.ttsScript || null,
       tts_script_ar: input.ttsScriptAr || null,
+      created_by: "trainer",
       source: "Admin",
     });
     resetModalState();
@@ -381,6 +502,11 @@ export function ExerciseManagement() {
       if (selectedAudioFile) {
         audioUrl = await uploadFile(selectedAudioFile, "audio");
       }
+      if (!audioUrl && recordedBlob) {
+        const ext = (recorderRef.current?.mimeType || "audio/webm").includes("mp4") ? "m4a" : "webm";
+        const recordedFile = new File([recordedBlob], `coach-recording.${ext}`, { type: recordedBlob.type || "audio/webm" });
+        audioUrl = await uploadFile(recordedFile, "audio");
+      }
       await db.from("exercises").update({
         name: input.name,
         name_ar: input.name,
@@ -393,6 +519,7 @@ export function ExerciseManagement() {
         audio_url: audioUrl,
         tts_script: input.ttsScript || null,
         tts_script_ar: input.ttsScriptAr || null,
+        created_by: "trainer",
       }).eq("id", exercise.id);
       resetModalState();
     } finally {
@@ -676,6 +803,60 @@ export function ExerciseManagement() {
                         ? `${selectedAudioFile.name} — ${(selectedAudioFile.size / (1024 * 1024)).toFixed(2)} MB`
                         : t("اختياري: ملف صوتي جاهز للتشغيل داخل التطبيق", "Optional: ready-made audio file for the app")}
                     </p>
+                    <div className="mt-4 rounded-xl border border-border/70 bg-secondary/30 p-3">
+                      <p className="text-muted-foreground" style={{ fontSize: 12 }}>
+                        {t("أو سجّل بصوت المدرب (من المتصفح)", "Or record coach voice (in-browser)")}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {!recording ? (
+                          <button
+                            type="button"
+                            onClick={startRecording}
+                            className="inline-flex items-center gap-2 rounded-lg border border-[#D4AF37]/40 bg-card px-3 py-2 text-xs text-[#D4AF37] hover:bg-[#D4AF37]/10"
+                          >
+                            <Mic className="h-4 w-4" />
+                            {t("بدء التسجيل", "Start recording")}
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={togglePauseRecording}
+                              className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs text-[#F5EAD4] hover:bg-secondary/60"
+                            >
+                              {recordedPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                              {recordedPaused ? t("متابعة", "Resume") : t("إيقاف مؤقت", "Pause")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={stopRecording}
+                              className="inline-flex items-center gap-2 rounded-lg bg-[#D4AF37] px-3 py-2 text-xs font-medium text-[#012217] hover:bg-[#c9a430]"
+                            >
+                              <Square className="h-4 w-4" />
+                              {t("إنهاء", "Stop")}
+                            </button>
+                          </>
+                        )}
+                        {recordedBlob ? (
+                          <button
+                            type="button"
+                            onClick={discardRecording}
+                            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground hover:bg-secondary/60 hover:text-[#F5EAD4]"
+                          >
+                            <Trash className="h-4 w-4" />
+                            {t("حذف التسجيل", "Discard")}
+                          </button>
+                        ) : null}
+                      </div>
+                      {recordedUrl ? (
+                        <div className="mt-3">
+                          <audio controls src={recordedUrl} className="w-full" />
+                          <p className="mt-2 text-muted-foreground" style={{ fontSize: 11 }}>
+                            {t("سيتم رفع التسجيل تلقائيًا عند حفظ التمرين.", "Recording will be uploaded automatically when you save the exercise.")}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </>

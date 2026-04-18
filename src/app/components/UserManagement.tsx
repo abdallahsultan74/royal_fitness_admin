@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, MoreHorizontal, Shield, ShieldOff, Mail, Eye } from "lucide-react";
+import { useNavigate } from "react-router";
 import { useLang } from "./LanguageContext";
-import { UserActivityDrawer } from "./UserActivityDrawer";
 import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
 
 const usersFallback = {
@@ -33,11 +33,12 @@ const usersFallback = {
 
 export function UserManagement() {
   const { lang, t } = useLang();
+  const navigate = useNavigate();
   const [users, setUsers] = useState(usersFallback[lang]);
   const [search, setSearch] = useState("");
   const [live, setLive] = useState(false);
   const [pendingId, setPendingId] = useState<string | number | null>(null);
-  const [activityUser, setActivityUser] = useState<{ id: string; name: string } | null>(null);
+  // Activity details are now shown on a dedicated user details page.
 
   useEffect(() => {
     if (!db || !hasFirebaseConfig) {
@@ -280,7 +281,7 @@ export function UserManagement() {
                     {live && typeof u.id === "string" ? (
                       <button
                         type="button"
-                        onClick={() => setActivityUser({ id: u.id as string, name: u.name })}
+                        onClick={() => navigate(`/users/${u.id}`)}
                         className="cursor-pointer rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-[#D4AF37]"
                         title={t("عرض النشاط", "View activity")}
                       >
@@ -320,12 +321,6 @@ export function UserManagement() {
           </div>
         )}
       </div>
-      <UserActivityDrawer
-        open={activityUser !== null}
-        userId={activityUser?.id ?? null}
-        userName={activityUser?.name ?? ""}
-        onClose={() => setActivityUser(null)}
-      />
     </div>
   );
 }

@@ -20,16 +20,17 @@ import {
   AreaChart,
 } from "recharts";
 import { useLang } from "./LanguageContext";
-import { UserActivityDrawer } from "./UserActivityDrawer";
 import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
+import { useNavigate } from "react-router";
 
 export function Dashboard() {
   const { t, isRTL } = useLang();
+  const navigate = useNavigate();
   const [usersCount, setUsersCount] = useState<number | null>(null);
   const [exercisesCount, setExercisesCount] = useState<number | null>(null);
   const [revenue, setRevenue] = useState<number | null>(null);
   const [recentUsers, setRecentUsers] = useState<{ id?: string; name: string; plan: string; time: string }[]>([]);
-  const [activityUser, setActivityUser] = useState<{ id: string; name: string } | null>(null);
+  // Activity details are now shown on a dedicated user details page.
   const [chartData, setChartData] = useState<{ month: string; users: number; revenue: number }[]>([]);
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
   const [avgBmi, setAvgBmi] = useState<number | null>(null);
@@ -339,7 +340,7 @@ export function Dashboard() {
                     type="button"
                     title={t("عرض النشاط", "View activity")}
                     className="shrink-0 rounded-lg border border-[#D4AF37]/40 p-2 text-[#D4AF37] transition-colors hover:bg-[#D4AF37]/15"
-                    onClick={() => setActivityUser({ id: u.id!, name: u.name })}
+                    onClick={() => navigate(`/users/${u.id}`)}
                   >
                     <Eye className="h-4 w-4" />
                   </button>
@@ -361,12 +362,6 @@ export function Dashboard() {
           </div>
         </div>
       </div>
-      <UserActivityDrawer
-        open={activityUser !== null}
-        userId={activityUser?.id ?? null}
-        userName={activityUser?.name ?? ""}
-        onClose={() => setActivityUser(null)}
-      />
     </div>
   );
 }
