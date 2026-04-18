@@ -75,10 +75,10 @@ export function Analytics() {
   const totalWorkouts = useMemo(() => data.reduce((sum, p) => sum + p.workouts, 0), [data]);
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-[#F5EAD4]">{t("الإحصائيات", "Analytics")}</h1>
-        <p className="text-muted-foreground" style={{ fontSize: 14 }}>
+    <div className="min-w-0 max-w-full space-y-4 p-4 sm:space-y-6 sm:p-6">
+      <div className="min-w-0">
+        <h1 className="text-xl text-[#F5EAD4] sm:text-2xl">{t("الإحصائيات", "Analytics")}</h1>
+        <p className="text-muted-foreground text-sm sm:text-[14px]">
           {t("مؤشرات أداء التطبيق والاستخدام", "Usage and product performance metrics")} ·{" "}
           <span className={live ? "text-emerald-400" : "text-amber-400"}>
             {live ? t("بيانات حية", "Live data") : t("بيانات تقديرية", "Estimated data")}
@@ -101,8 +101,9 @@ export function Analytics() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-5" dir="ltr">
-        <ResponsiveContainer width="100%" height={320}>
+      <div className="min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5" dir="ltr">
+        <div className="h-[240px] w-full sm:h-[280px] md:h-[320px]">
+          <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(212,175,55,0.08)" />
             <XAxis dataKey="name" tick={{ fill: "#a8997e", fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -120,6 +121,7 @@ export function Analytics() {
             <Bar dataKey="workouts" name={t("التفاعلات", "Workouts")} fill="#2ecc71" radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );

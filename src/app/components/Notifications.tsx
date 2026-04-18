@@ -122,20 +122,20 @@ export function Notifications() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-[#F5EAD4]">{t("الإشعارات", "Notifications")}</h1>
-        <p className="text-muted-foreground" style={{ fontSize: 14 }}>
+    <div className="min-w-0 max-w-full space-y-4 p-4 sm:space-y-6 sm:p-6">
+      <div className="min-w-0">
+        <h1 className="text-xl text-[#F5EAD4] sm:text-2xl">{t("الإشعارات", "Notifications")}</h1>
+        <p className="text-muted-foreground text-sm sm:text-[14px]">
           {t("إدارة إشعارات النظام وإرسال تنبيهات", "Manage system notifications and announcements")}
         </p>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4 flex items-center justify-between">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-muted-foreground" style={{ fontSize: 12 }}>{t("غير المقروءة", "Unread")}</p>
-          <p className="text-[#D4AF37]" style={{ fontSize: 24, fontWeight: 600 }}>{unreadCount}</p>
+          <p className="text-muted-foreground text-xs sm:text-[12px]">{t("غير المقروءة", "Unread")}</p>
+          <p className="text-2xl font-semibold text-[#D4AF37] sm:text-3xl">{unreadCount}</p>
         </div>
-        <span className={live ? "text-emerald-400" : "text-amber-400"} style={{ fontSize: 12 }}>
+        <span className={`text-xs sm:text-[12px] ${live ? "text-emerald-400" : "text-amber-400"}`}>
           {live ? t("متصل بقاعدة البيانات", "Connected to database") : t("وضع محلي", "Local mode")}
         </span>
       </div>
@@ -167,22 +167,26 @@ export function Notifications() {
       <div className="space-y-3">
         {items.map((item) => (
           <div key={item.id} className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
                 <p className="text-[#F5EAD4]" style={{ fontSize: 14, fontWeight: 600 }}>{item.title}</p>
-                <p className="text-muted-foreground" style={{ fontSize: 12 }}>
+                <p className="text-muted-foreground text-xs sm:text-[12px]">
                   {new Date(item.createdAt).toLocaleString(lang === "ar" ? "ar-EG" : "en-US")}
                 </p>
               </div>
               {!item.read ? (
-                <button onClick={() => markRead(item)} className="px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-[#D4AF37]">
+                <button
+                  type="button"
+                  onClick={() => markRead(item)}
+                  className="w-full shrink-0 rounded-md border border-border px-3 py-1.5 text-muted-foreground hover:text-[#D4AF37] sm:w-auto"
+                >
                   {t("تحديد كمقروء", "Mark as read")}
                 </button>
               ) : (
-                <span className="text-emerald-400" style={{ fontSize: 12 }}>{t("مقروء", "Read")}</span>
+                <span className="text-emerald-400 text-xs sm:text-[12px]">{t("مقروء", "Read")}</span>
               )}
             </div>
-            <p className="text-muted-foreground mt-2" style={{ fontSize: 13 }}>{item.body}</p>
+            <p className="mt-2 break-words text-muted-foreground text-sm sm:text-[13px]">{item.body}</p>
           </div>
         ))}
       </div>

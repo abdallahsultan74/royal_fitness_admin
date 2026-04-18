@@ -182,10 +182,10 @@ export function UserManagement() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-[#F5EAD4]">{t("إدارة المستخدمين", "User Management")}</h1>
-        <p className="text-muted-foreground" style={{ fontSize: 14 }}>
+    <div className="min-w-0 max-w-full space-y-4 p-4 sm:space-y-6 sm:p-6">
+      <div className="min-w-0">
+        <h1 className="text-xl text-[#F5EAD4] sm:text-2xl">{t("إدارة المستخدمين", "User Management")}</h1>
+        <p className="text-muted-foreground text-sm sm:text-[14px]">
           {t(`إدارة جميع المستخدمين المسجلين (${users.length} مستخدم)`, `Manage all registered users (${users.length} total)`)} ·{" "}
           <span className={live ? "text-emerald-400" : "text-amber-400"}>
             {live ? t("متصل بـ Supabase", "Connected to Supabase") : t("وضع تجريبي محلي", "Local demo mode")}
@@ -194,17 +194,17 @@ export function UserManagement() {
       </div>
 
       {/* Quick stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-xl border border-border bg-card p-4">
-            <p className="text-muted-foreground" style={{ fontSize: 12 }}>{s.label}</p>
-            <p className={s.color} style={{ fontSize: 24, fontWeight: 600 }}>{s.value}</p>
+          <div key={s.label} className="min-w-0 rounded-xl border border-border bg-card p-3 sm:p-4">
+            <p className="text-muted-foreground text-xs sm:text-[12px]">{s.label}</p>
+            <p className={`${s.color} text-xl font-semibold sm:text-2xl`}>{s.value}</p>
           </div>
         ))}
       </div>
 
       {/* Search */}
-      <div className="relative max-w-md">
+      <div className="relative w-full max-w-full sm:max-w-md">
         <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input
           type="text"
@@ -217,8 +217,9 @@ export function UserManagement() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <table className="w-full">
+      <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[960px]">
           <thead>
             <tr className="border-b border-border">
               {headers.map((h) => (
@@ -273,7 +274,7 @@ export function UserManagement() {
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
                     <button
                       onClick={() => handleSendEmail(u.email)}
                       className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-[#D4AF37] transition-colors cursor-pointer"
@@ -298,6 +299,7 @@ export function UserManagement() {
             ))}
           </tbody>
         </table>
+        </div>
         {filtered.length === 0 && (
           <div className="py-12 text-center text-muted-foreground" style={{ fontSize: 14 }}>
             {t("لا يوجد مستخدمون مطابقون للبحث.", "No users match your search.")}

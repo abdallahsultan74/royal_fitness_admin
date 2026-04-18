@@ -109,10 +109,10 @@ export function Support() {
     status === "open" ? t("مفتوحة", "Open") : t("محلولة", "Resolved");
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-[#F5EAD4]">{t("الدعم الفني", "Support")}</h1>
-        <p className="text-muted-foreground" style={{ fontSize: 14 }}>
+    <div className="min-w-0 max-w-full space-y-4 p-4 sm:space-y-6 sm:p-6">
+      <div className="min-w-0">
+        <h1 className="text-xl text-[#F5EAD4] sm:text-2xl">{t("الدعم الفني", "Support")}</h1>
+        <p className="text-muted-foreground text-sm sm:text-[14px]">
           {t("إدارة تذاكر المستخدمين والتواصل", "Handle user tickets and support workflows")}
         </p>
       </div>
@@ -136,8 +136,9 @@ export function Support() {
         </button>
       </div>
 
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <table className="w-full">
+      <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px]">
           <thead>
             <tr className="border-b border-border">
               {[t("المستخدم", "User"), t("العنوان", "Subject"), t("الحالة", "Status"), t("الوصف", "Message"), t("إجراء", "Action")].map((h) => (
@@ -155,7 +156,9 @@ export function Support() {
                     {statusLabel(ticket.status)}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">{ticket.message}</td>
+                <td className="max-w-[200px] px-4 py-3 text-muted-foreground sm:max-w-xs">
+                  <span className="line-clamp-3 break-words">{ticket.message}</span>
+                </td>
                 <td className="px-4 py-3">
                   <button
                     onClick={() => resolveTicket(ticket)}
@@ -170,6 +173,7 @@ export function Support() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

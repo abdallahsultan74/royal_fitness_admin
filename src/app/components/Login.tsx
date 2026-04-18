@@ -38,8 +38,8 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 space-y-6">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
+      <div className="w-full max-w-md space-y-5 rounded-2xl border border-border bg-card p-4 sm:space-y-6 sm:p-6">
         <div className="flex justify-end">
           <button
             onClick={toggle}

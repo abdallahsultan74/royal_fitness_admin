@@ -79,18 +79,24 @@ type ExerciseFormState = {
 
 function FilterSelect({ label, options, value, onChange }: { label: string; options: string[]; value: string; onChange: (v: string) => void }) {
   return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="appearance-none bg-secondary border border-border rounded-lg px-3 py-2 pe-8 text-foreground focus:outline-none focus:ring-1 focus:ring-[#D4AF37]/40 cursor-pointer"
-        style={{ fontSize: 13 }}
-      >
-        {options.map((o) => (
-          <option key={o} value={o} className="bg-card">{label}: {o}</option>
-        ))}
-      </select>
-      <ChevronDown className="absolute end-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+    <div className="flex min-w-0 w-full flex-col gap-1">
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <div className="relative min-w-0">
+        <select
+          aria-label={label}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-10 w-full min-w-0 cursor-pointer appearance-none rounded-lg border border-border bg-secondary px-3 py-2 pe-8 text-foreground focus:outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
+          style={{ fontSize: 13 }}
+        >
+          {options.map((o) => (
+            <option key={o} value={o} className="bg-card">
+              {o}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute end-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      </div>
     </div>
   );
 }
@@ -417,11 +423,11 @@ export function ExerciseManagement() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-[#F5EAD4]">{t("إدارة التمارين", "Exercise Management")}</h1>
-          <p className="text-muted-foreground" style={{ fontSize: 14 }}>
+    <div className="min-w-0 max-w-full space-y-4 p-4 sm:space-y-6 sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl text-[#F5EAD4] sm:text-2xl">{t("إدارة التمارين", "Exercise Management")}</h1>
+          <p className="text-muted-foreground text-sm sm:text-[14px]">
             {t(`إدارة مكتبة التمارين الخاصة بك (${exercises.length} تمرين)`, `Manage your exercise library (${exercises.length} exercises)`)} ·{" "}
             <span className={live ? "text-emerald-400" : "text-amber-400"}>
               {live ? t("مربوط ببيانات التطبيق", "Synced with app data") : t("وضع تجريبي محلي", "Local demo mode")}
@@ -430,28 +436,33 @@ export function ExerciseManagement() {
           </p>
         </div>
         <button
+          type="button"
           onClick={openCreateModal}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#D4AF37] text-[#012217] hover:bg-[#c9a430] transition-colors shadow-[0_0_20px_rgba(212,175,55,0.15)] cursor-pointer"
+          className="flex w-full shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#D4AF37] px-5 py-2.5 text-[#012217] shadow-[0_0_20px_rgba(212,175,55,0.15)] transition-colors hover:bg-[#c9a430] sm:w-auto"
           style={{ fontSize: 14, fontWeight: 600 }}
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="h-4 w-4" />
           {t("إضافة تمرين جديد", "Add New Exercise")}
         </button>
       </div>
 
       {/* Filter Bar */}
-      <div className="flex items-center gap-3 p-4 rounded-xl border border-border bg-card flex-wrap">
-        <Filter className="w-4 h-4 text-[#D4AF37]" />
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder={t("ابحث عن تمرين...", "Search exercises...")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full ps-9 pe-3 py-2 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
-            style={{ fontSize: 13 }}
-          />
+      <div className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="flex min-w-0 items-stretch gap-2 sm:col-span-2 lg:col-span-3 xl:col-span-2">
+          <div className="flex shrink-0 items-center ps-1">
+            <Filter className="h-4 w-4 text-[#D4AF37]" />
+          </div>
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder={t("ابحث عن تمرين...", "Search exercises...")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-10 w-full rounded-lg border border-border bg-secondary py-2 ps-9 pe-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
+              style={{ fontSize: 13 }}
+            />
+          </div>
         </div>
         <FilterSelect label={t("العضلة", "Target")} options={fd.target} value={filters.target} onChange={(v) => setFilters({ ...filters, target: v })} />
         <FilterSelect label={t("الأدوات", "Equipment")} options={fd.equipment} value={filters.equipment} onChange={(v) => setFilters({ ...filters, equipment: v })} />
@@ -460,8 +471,9 @@ export function ExerciseManagement() {
       </div>
 
       {/* Data Table */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <table className="w-full">
+      <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px]">
           <thead>
             <tr className="border-b border-border">
               {headers.map((h) => (
@@ -485,7 +497,9 @@ export function ExerciseManagement() {
                     </div>
                   )}
                 </td>
-                <td className="px-4 py-3 text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 500 }}>{e.name}</td>
+                <td className="max-w-[220px] px-4 py-3 text-[#F5EAD4] sm:max-w-xs" style={{ fontSize: 13, fontWeight: 500 }}>
+                  <span className="line-clamp-2 break-words">{e.name}</span>
+                </td>
                 <td className="px-4 py-3 text-muted-foreground" style={{ fontSize: 13 }}>{e.target}</td>
                 <td className="px-4 py-3">
                   <span className={`px-2.5 py-1 rounded-full ${(fd.diffColors as any)[e.difficulty] || ""}`} style={{ fontSize: 11 }}>{e.difficulty}</span>
@@ -495,7 +509,7 @@ export function ExerciseManagement() {
                   <span className={`px-2 py-0.5 rounded-full ${e.source === "RapidAPI" ? "bg-blue-500/10 text-blue-400" : "bg-secondary text-muted-foreground"}`} style={{ fontSize: 11 }}>{e.source}</span>
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
                     <button
                       onClick={() => openViewModal(e)}
                       className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-[#D4AF37] transition-colors cursor-pointer"
@@ -525,6 +539,7 @@ export function ExerciseManagement() {
             ))}
           </tbody>
         </table>
+        </div>
         {filtered.length === 0 && (
           <div className="py-12 text-center text-muted-foreground" style={{ fontSize: 14 }}>
             {t("لا توجد تمارين تطابق الفلاتر الحالية.", "No exercises match the current filters.")}
@@ -532,8 +547,8 @@ export function ExerciseManagement() {
         )}
       </div>
       {modalMode && (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl rounded-xl border border-border bg-card p-5 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-3 backdrop-blur-[2px] sm:p-4">
+          <div className="max-h-[min(90vh,900px)] w-full max-w-2xl space-y-4 overflow-y-auto rounded-xl border border-border bg-card p-4 sm:p-5">
             <div className="flex items-center justify-between">
               <h3 className="text-[#F5EAD4]" style={{ fontSize: 18, fontWeight: 600 }}>
                 {modalMode === "create"

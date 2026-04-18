@@ -211,7 +211,7 @@ export function Dashboard() {
   const planTrial = t("تجريبي", "Trial");
 
   return (
-    <div className="space-y-4 p-4 sm:space-y-6 sm:p-6">
+    <div className="min-w-0 max-w-full space-y-4 p-4 sm:space-y-6 sm:p-6">
       <div className="min-w-0">
         <h1 className="text-xl text-[#F5EAD4] sm:text-2xl md:text-3xl">{t("لوحة التحكم", "Dashboard")}</h1>
         <p className="text-muted-foreground text-sm sm:text-[14px]">

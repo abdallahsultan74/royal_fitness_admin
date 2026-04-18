@@ -61,15 +61,15 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-[#F5EAD4]">{t("الإعدادات", "Settings")}</h1>
-        <p className="text-muted-foreground" style={{ fontSize: 14 }}>
+    <div className="min-w-0 max-w-full space-y-4 p-4 sm:space-y-6 sm:p-6">
+      <div className="min-w-0">
+        <h1 className="text-xl text-[#F5EAD4] sm:text-2xl">{t("الإعدادات", "Settings")}</h1>
+        <p className="text-muted-foreground text-sm sm:text-[14px]">
           {t("إعدادات النظام العامة ولوحات الإدارة", "Global system and admin preferences")}
         </p>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+      <div className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-5">
         <label className="block space-y-1">
           <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("اسم التطبيق", "App name")}</span>
           <input
@@ -88,25 +88,27 @@ export function SettingsPage() {
           />
         </label>
 
-        <label className="flex items-center justify-between p-3 rounded-lg border border-border bg-secondary/50">
-          <span className="text-foreground" style={{ fontSize: 13 }}>{t("وضع الصيانة", "Maintenance mode")}</span>
+        <label className="flex flex-col gap-2 rounded-lg border border-border bg-secondary/50 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <span className="min-w-0 text-foreground" style={{ fontSize: 13 }}>{t("وضع الصيانة", "Maintenance mode")}</span>
           <input
             type="checkbox"
+            className="h-4 w-4 shrink-0 self-start sm:self-auto"
             checked={settings.maintenanceMode}
             onChange={(e) => setSettings((prev) => ({ ...prev, maintenanceMode: e.target.checked }))}
           />
         </label>
 
-        <label className="flex items-center justify-between p-3 rounded-lg border border-border bg-secondary/50">
-          <span className="text-foreground" style={{ fontSize: 13 }}>{t("موافقة تلقائية على التمارين", "Auto-approve exercises")}</span>
+        <label className="flex flex-col gap-2 rounded-lg border border-border bg-secondary/50 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <span className="min-w-0 text-foreground" style={{ fontSize: 13 }}>{t("موافقة تلقائية على التمارين", "Auto-approve exercises")}</span>
           <input
             type="checkbox"
+            className="h-4 w-4 shrink-0 self-start sm:self-auto"
             checked={settings.autoApproveExercises}
             onChange={(e) => setSettings((prev) => ({ ...prev, autoApproveExercises: e.target.checked }))}
           />
         </label>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={saveSettings}
             disabled={saving}

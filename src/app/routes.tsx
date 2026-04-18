@@ -20,6 +20,15 @@ function ComingSoon() {
   );
 }
 
+function routerBasename(): string | undefined {
+  const raw = import.meta.env.BASE_URL;
+  if (!raw || raw === '/') return undefined;
+  const trimmed = raw.replace(/\/$/, '');
+  return trimmed || undefined;
+}
+
+const basename = routerBasename();
+
 export const router = createBrowserRouter([
   {
     path: "/login",
@@ -43,4 +52,4 @@ export const router = createBrowserRouter([
       { path: "notifications", Component: Notifications },
     ],
   },
-]);
+], basename ? { basename } : {});
