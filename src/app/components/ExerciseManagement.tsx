@@ -37,6 +37,7 @@ const filtersData = {
     equipment: ["الكل", "بار حديدي", "دمبل", "كابل", "آلة", "وزن الجسم"],
     difficulty: ["الكل", "مبتدئ", "متوسط", "متقدم"],
     source: ["الكل", "يدوي", "RapidAPI"],
+    creator: ["الكل", "المدرب", "التطبيق"],
     diffColors: { "مبتدئ": "bg-emerald-500/10 text-emerald-400", "متوسط": "bg-[#D4AF37]/10 text-[#D4AF37]", "متقدم": "bg-red-500/10 text-red-400" },
   },
   en: {
@@ -45,6 +46,7 @@ const filtersData = {
     equipment: ["All", "Barbell", "Dumbbell", "Cable", "Machine", "Bodyweight"],
     difficulty: ["All", "Beginner", "Intermediate", "Advanced"],
     source: ["All", "Manual", "RapidAPI"],
+    creator: ["All", "Trainer", "App"],
     diffColors: { "Beginner": "bg-emerald-500/10 text-emerald-400", "Intermediate": "bg-[#D4AF37]/10 text-[#D4AF37]", "Advanced": "bg-red-500/10 text-red-400" },
   },
 };
@@ -62,6 +64,7 @@ type ExerciseItem = {
   audioUrl?: string;
   ttsScript?: string;
   ttsScriptAr?: string;
+  createdBy?: "app" | "trainer" | "admin";
 };
 type ExerciseFormState = {
   name: string;
@@ -98,7 +101,7 @@ export function ExerciseManagement() {
   const [exercises, setExercises] = useState<ExerciseItem[]>(exercisesFallback[lang]);
   const canUseFirebase = Boolean(db && hasFirebaseConfig);
 
-  const [filters, setFilters] = useState({ target: fd.all, equipment: fd.all, difficulty: fd.all, source: fd.all });
+  const [filters, setFilters] = useState({ target: fd.all, equipment: fd.all, difficulty: fd.all, source: fd.all, creator: fd.all });
   const [search, setSearch] = useState("");
   const [live, setLive] = useState(false);
   const [pendingId, setPendingId] = useState<string | number | null>(null);

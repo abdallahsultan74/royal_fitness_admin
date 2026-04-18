@@ -29,6 +29,9 @@ export function Dashboard() {
   const [recentUsers, setRecentUsers] = useState<{ name: string; plan: string; time: string }[]>([]);
   const [chartData, setChartData] = useState<{ month: string; users: number; revenue: number }[]>([]);
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
+  const [avgBmi, setAvgBmi] = useState<number | null>(null);
+  const [todayWeightLogs, setTodayWeightLogs] = useState<number | null>(null);
+  const [activeChallenges, setActiveChallenges] = useState<number | null>(null);
 
   useEffect(() => {
     if (!db || !hasFirebaseConfig) return;
@@ -41,6 +44,8 @@ export function Dashboard() {
       if (!db) return;
       const usersResp = await db.from("profiles").select("*");
       const usersRaw = usersResp.data ?? [];
+      const progressResp = await db.rpc("api_admin_user_progress_summary");
+      const progressRows = (progressResp.data ?? []) as any[];
       const users = usersRaw.map((data) => {
         const createdAtRaw = data.created_at?.toString();
         const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
@@ -56,6 +61,20 @@ export function Dashboard() {
       setExercisesCount((exercisesResp.data ?? []).length);
       const requestsResp = await db.from("subscription_requests").select("id").eq("status", "pending");
       setPendingRequests((requestsResp.data ?? []).length);
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const weightLogsResp = await db.from("weight_logs").select("id").eq("logged_at", todayKey);
+      setTodayWeightLogs((weightLogsResp.data ?? []).length);
+      const bmiValues = progressRows
+        .map((row) => Number(row.bmi))
+        .filter((value) => Number.isFinite(value) && value > 0);
+      setAvgBmi(
+        bmiValues.length
+          ? Number((bmiValues.reduce((sum, value) => sum + value, 0) / bmiValues.length).toFixed(1))
+          : 0,
+      );
+      setActiveChallenges(
+        progressRows.filter((row) => String(row.challenge_status ?? "") === "active").length,
+      );
 
       const revenueTotal = users.reduce((sum, user) => {
         const plan = String(user.plan).toLowerCase();
@@ -181,6 +200,9 @@ export function Dashboard() {
     { label: t("إيرادات الاشتراكات", "Subscription Revenue"), value: `$${revenue ?? 48290}`, change: t("تقديري", "Estimated"), up: true, icon: DollarSign },
     { label: t("التمارين النشطة", "Active Exercises"), value: exercisesCount ?? 34, change: t("مباشر", "Live"), up: true, icon: Trophy },
     { label: t("طلبات الاشتراك", "Subscription Requests"), value: pendingRequests ?? 0, change: t("قيد المراجعة", "Pending"), up: false, icon: AlertTriangle },
+    { label: t("متوسط BMI", "Average BMI"), value: avgBmi ?? "--", change: t("صحي", "Health"), up: true, icon: TrendingUp },
+    { label: t("تحديثات وزن اليوم", "Today's weight logs"), value: todayWeightLogs ?? 0, change: t("مباشر", "Live"), up: true, icon: TrendingUp },
+    { label: t("تحديات نشطة", "Active challenges"), value: activeChallenges ?? 0, change: t("30 يوم", "30-day"), up: true, icon: Trophy },
   ];
   const tableRecentUsers = recentUsers.length ? recentUsers : fallbackRecentUsers;
   const renderedChartData = chartData.length ? chartData : fallbackChartData;
@@ -189,10 +211,10 @@ export function Dashboard() {
   const planTrial = t("تجريبي", "Trial");
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-[#F5EAD4]">{t("لوحة التحكم", "Dashboard")}</h1>
-        <p className="text-muted-foreground" style={{ fontSize: 14 }}>
+    <div className="space-y-4 p-4 sm:space-y-6 sm:p-6">
+      <div className="min-w-0">
+        <h1 className="text-xl text-[#F5EAD4] sm:text-2xl md:text-3xl">{t("لوحة التحكم", "Dashboard")}</h1>
+        <p className="text-muted-foreground text-sm sm:text-[14px]">
           {t(
             "مرحباً بعودتك، مدير النظام. إليك نظرة عامة على إمبراطورية اللياقة الخاصة بك.",
             "Welcome back, Royal Admin. Here's your fitness empire overview."
@@ -201,29 +223,31 @@ export function Dashboard() {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
         {metrics.map((m) => (
           <div
             key={m.label}
-            className="relative overflow-hidden rounded-xl border border-border bg-card p-5 transition-all hover:border-[#D4AF37]/30 hover:shadow-[0_0_20px_rgba(212,175,55,0.05)]"
+            className="relative overflow-hidden rounded-xl border border-border bg-card p-4 transition-all hover:border-[#D4AF37]/30 hover:shadow-[0_0_20px_rgba(212,175,55,0.05)] sm:p-5"
           >
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-muted-foreground" style={{ fontSize: 12 }}>{m.label}</p>
-                <p className="text-[#F5EAD4] mt-1" style={{ fontSize: 28, fontWeight: 600 }}>{m.value}</p>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-muted-foreground text-xs sm:text-[12px]">{m.label}</p>
+                <p className="mt-1 truncate text-[#F5EAD4] text-[1.35rem] font-semibold sm:text-[1.65rem] md:text-[28px]">
+                  {m.value}
+                </p>
               </div>
               <div className="w-10 h-10 rounded-lg bg-[#D4AF37]/10 flex items-center justify-center">
                 <m.icon className="w-5 h-5 text-[#D4AF37]" />
               </div>
             </div>
-            <div className="flex items-center gap-1 mt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-1">
               {m.up ? (
-                <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                <TrendingUp className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
               ) : (
-                <TrendingDown className="w-3.5 h-3.5 text-emerald-400" />
+                <TrendingDown className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
               )}
-              <span className="text-emerald-400" style={{ fontSize: 12 }}>{m.change}</span>
-              <span className="text-muted-foreground" style={{ fontSize: 12 }}>
+              <span className="text-emerald-400 text-xs sm:text-[12px]">{m.change}</span>
+              <span className="text-muted-foreground text-xs sm:text-[12px]">
                 {t("مقارنة بالشهر الماضي", "vs last month")}
               </span>
             </div>
@@ -232,27 +256,31 @@ export function Dashboard() {
       </div>
 
       {/* Chart + Recent */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 rounded-xl border border-border bg-card p-5" dir="ltr">
-          <div className="flex items-center justify-between mb-6" dir={isRTL ? "rtl" : "ltr"}>
-            <div>
-              <h3 className="text-[#F5EAD4]">{t("نشاط المستخدمين", "User Activity")}</h3>
-              <p className="text-muted-foreground" style={{ fontSize: 13 }}>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-6">
+        <div className="min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5 lg:col-span-2" dir="ltr">
+          <div
+            className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-y-2"
+            dir={isRTL ? "rtl" : "ltr"}
+          >
+            <div className="min-w-0">
+              <h3 className="text-base text-[#F5EAD4] sm:text-lg">{t("نشاط المستخدمين", "User Activity")}</h3>
+              <p className="text-muted-foreground text-xs sm:text-[13px]">
                 {t("التسجيلات الشهرية واتجاه الإيرادات", "Monthly signups & revenue trend")}
               </p>
             </div>
-            <div className="flex gap-4">
+            <div className="flex flex-wrap items-center gap-3 sm:gap-4">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#D4AF37]" />
-                <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("المستخدمون", "Users")}</span>
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#D4AF37]" />
+                <span className="text-muted-foreground text-xs sm:text-[12px]">{t("المستخدمون", "Users")}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-                <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("الإيرادات", "Revenue")}</span>
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-400" />
+                <span className="text-muted-foreground text-xs sm:text-[12px]">{t("الإيرادات", "Revenue")}</span>
               </div>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={300}>
+          <div className="h-[220px] w-full sm:h-[260px] md:h-[300px] lg:h-[280px] xl:h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={renderedChartData}>
               <defs>
                 <linearGradient id="goldGrad" x1="0" y1="0" x2="0" y2="1">
@@ -280,12 +308,13 @@ export function Dashboard() {
               <Area type="monotone" dataKey="revenue" stroke="#2ecc71" strokeWidth={2} fill="url(#greenGrad)" name={t("الإيرادات", "Revenue")} />
             </AreaChart>
           </ResponsiveContainer>
+          </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-[#F5EAD4]">{t("أحدث التسجيلات", "Recent Signups")}</h3>
-            <button className="text-[#D4AF37] flex items-center gap-1 cursor-pointer" style={{ fontSize: 12 }}>
+        <div className="min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="min-w-0 text-base text-[#F5EAD4] sm:text-lg">{t("أحدث التسجيلات", "Recent Signups")}</h3>
+            <button type="button" className="flex shrink-0 cursor-pointer items-center gap-1 text-[#D4AF37] text-xs sm:text-[12px]">
               {t("عرض الكل", "View All")}
               {isRTL ? <ArrowUpLeft className="w-3.5 h-3.5" /> : <ArrowUpRight className="w-3.5 h-3.5" />}
             </button>

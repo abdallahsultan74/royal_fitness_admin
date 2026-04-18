@@ -35,6 +35,7 @@ export function Notifications() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [live, setLive] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!db || !hasFirebaseConfig) return;
@@ -56,7 +57,12 @@ export function Notifications() {
     };
 
     ensureAdminAuth().then((authed) => {
-      if (!authed || cancelled) return;
+      if (!authed || cancelled) {
+        setAuthError("Admin auth failed. Check VITE_ADMIN_EMAIL / VITE_ADMIN_PASSWORD in Vercel env.");
+        setLive(false);
+        return;
+      }
+      setAuthError(null);
       loadNotifications();
       channel = db
         .channel("admin-notifications-live")
@@ -133,6 +139,11 @@ export function Notifications() {
           {live ? t("متصل بقاعدة البيانات", "Connected to database") : t("وضع محلي", "Local mode")}
         </span>
       </div>
+      {authError ? (
+        <div className="text-red-400" style={{ fontSize: 13 }}>
+          {authError}
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-border bg-card p-4 space-y-3">
         <p className="text-[#F5EAD4]" style={{ fontSize: 14, fontWeight: 600 }}>{t("إرسال إشعار جديد", "Send notification")}</p>

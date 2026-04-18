@@ -5,3 +5,4 @@ dist/
 functions/node_modules/
 supabase/.temp/
 *.log
+.vercel

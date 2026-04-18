@@ -48,12 +48,12 @@ export function UserManagement() {
 
     const loadUsers = async () => {
       if (!db) return;
-      const resp = await db.from("profiles").select("*").order("created_at", { ascending: false });
+      const resp = await db.rpc("api_admin_user_progress_summary");
       const rows = resp.data ?? [];
       const mapped = rows.map((data, idx) => {
         const fallbackName = lang === "ar" ? "مستخدم" : "User";
         const status = data.status?.toString() ?? (lang === "ar" ? "نشط" : "Active");
-          const role = data.role?.toString() ?? "user";
+        const role = data.role?.toString() ?? "user";
         const plan = data.plan?.toString() ?? (lang === "ar" ? "تجريبي" : "Trial");
         const name = data.name?.toString() ?? `${fallbackName} ${idx + 1}`;
         const email = data.email?.toString() ?? "unknown@email.com";
@@ -78,11 +78,16 @@ export function UserManagement() {
             : "Just now";
 
         return {
-          id: data.id,
+          id: data.user_id,
           name,
           email,
           plan,
-            role,
+          role,
+          weight: data.current_weight_kg,
+          bmi: data.bmi,
+          targetWeight: data.target_weight_kg,
+          challenge: data.active_challenge_title,
+          challengeDay: data.challenge_current_day,
           lastActive,
           status,
           initials: initials || (lang === "ar" ? "مس" : "US"),
@@ -145,8 +150,8 @@ export function UserManagement() {
   ];
 
   const headers = lang === "ar"
-    ? ["الصورة", "الاسم", "البريد الإلكتروني", "الخطة", "الدور", "آخر نشاط", "الحالة", "الإجراءات"]
-    : ["Profile", "Name", "Email", "Plan", "Role", "Last Active", "Status", "Actions"];
+    ? ["الصورة", "الاسم", "البريد الإلكتروني", "الخطة", "الوزن", "BMI", "التحدي", "آخر نشاط", "الحالة", "الإجراءات"]
+    : ["Profile", "Name", "Email", "Plan", "Weight", "BMI", "Challenge", "Last Active", "Status", "Actions"];
 
   const handleSendEmail = (email: string) => {
     if (typeof window === "undefined") return;
@@ -183,7 +188,7 @@ export function UserManagement() {
         <p className="text-muted-foreground" style={{ fontSize: 14 }}>
           {t(`إدارة جميع المستخدمين المسجلين (${users.length} مستخدم)`, `Manage all registered users (${users.length} total)`)} ·{" "}
           <span className={live ? "text-emerald-400" : "text-amber-400"}>
-            {live ? t("متصل بـ Firebase", "Connected to Firebase") : t("وضع تجريبي محلي", "Local demo mode")}
+            {live ? t("متصل بـ Supabase", "Connected to Supabase") : t("وضع تجريبي محلي", "Local demo mode")}
           </span>
         </p>
       </div>
@@ -239,12 +244,24 @@ export function UserManagement() {
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <span
-                    className={`px-2 py-0.5 rounded-full ${u.role === "admin" ? "bg-[#D4AF37]/10 text-[#D4AF37]" : "bg-secondary text-muted-foreground border border-border"}`}
-                    style={{ fontSize: 11 }}
-                  >
-                    {u.role === "admin" ? t("مدير", "Admin") : t("مستخدم", "User")}
+                  <span className="text-muted-foreground" style={{ fontSize: 12 }}>
+                    {u.weight ? `${Number(u.weight).toFixed(1)} kg` : "--"}
                   </span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="text-muted-foreground" style={{ fontSize: 12 }}>
+                    {u.bmi ? Number(u.bmi).toFixed(1) : "--"}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-col">
+                    <span className="text-[#F5EAD4]" style={{ fontSize: 12 }}>
+                      {u.challenge ?? t("لا يوجد", "None")}
+                    </span>
+                    <span className="text-muted-foreground" style={{ fontSize: 11 }}>
+                      {u.challengeDay ? t(`اليوم ${u.challengeDay}`, `Day ${u.challengeDay}`) : ""}
+                    </span>
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground" style={{ fontSize: 13 }}>{u.lastActive}</td>
                 <td className="px-4 py-3">
