@@ -39,20 +39,42 @@ async function rpcBoolean(name: string): Promise<boolean> {
   }
 }
 
+/** Fallback when RPC policies lag: read own row (RLS usually allows self-read). */
+async function getRoleFromOwnProfile(): Promise<string | null> {
+  if (!db) return null;
+  try {
+    const { data: sessionData } = await db.auth.getSession();
+    const uid = sessionData.session?.user?.id;
+    if (!uid) return null;
+    const { data, error } = await db.from("profiles").select("role").eq("id", uid).maybeSingle();
+    if (error || !data) return null;
+    const r = (data as { role?: string }).role;
+    return typeof r === "string" ? r.trim().toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Current session is admin (profiles.role / JWT / legacy rules). */
 export async function getIsAdmin(): Promise<boolean> {
-  return rpcBoolean("is_admin");
+  if (await rpcBoolean("is_admin")) return true;
+  const role = await getRoleFromOwnProfile();
+  return role === "admin";
 }
 
 /** Current session is coach. */
 export async function getIsCoach(): Promise<boolean> {
-  return rpcBoolean("is_coach");
+  if (await rpcBoolean("is_coach")) return true;
+  const role = await getRoleFromOwnProfile();
+  return role === "coach";
 }
 
 /** Admin or coach — can use the staff panel. */
 export async function getIsStaff(): Promise<boolean> {
-  if (await getIsAdmin()) return true;
-  return getIsCoach();
+  const [adminRpc, coachRpc] = await Promise.all([rpcBoolean("is_admin"), rpcBoolean("is_coach")]);
+  if (adminRpc || coachRpc) return true;
+  const role = await getRoleFromOwnProfile();
+  return role === "admin" || role === "coach";
 }
 
 /**

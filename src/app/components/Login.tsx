@@ -55,9 +55,12 @@ export function Login() {
           <div className="mx-auto w-12 h-12 rounded-xl bg-[#D4AF37]/10 flex items-center justify-center">
             <Dumbbell className="w-6 h-6 text-[#D4AF37]" />
           </div>
-          <h1 className="text-[#F5EAD4]">{t("تسجيل دخول الإدارة", "Admin Login")}</h1>
+          <h1 className="text-[#F5EAD4]">{t("تسجيل دخول اللوحة", "Staff login")}</h1>
           <p className="text-muted-foreground" style={{ fontSize: 13 }}>
-            {t("أدخل بيانات مدير النظام للمتابعة", "Sign in with your admin credentials")}
+            {t(
+              "حساب أدمن أو مدرب مفعّل في profiles.role",
+              "Use an admin or coach account (profiles.role in Supabase)",
+            )}
           </p>
         </div>
 
