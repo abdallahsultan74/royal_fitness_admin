@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, MoreHorizontal, Shield, ShieldOff, Mail, Eye, UserPlus } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useLang } from "./LanguageContext";
-import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
+import { db, ensureStaffAuth, getIsAdmin, hasFirebaseConfig } from "../firebase";
 
 const usersFallback = {
   ar: [
@@ -45,6 +45,7 @@ export function UserManagement() {
   const [staffPassword, setStaffPassword] = useState("");
   const [staffCreating, setStaffCreating] = useState(false);
   const [staffError, setStaffError] = useState<string | null>(null);
+  const [isAdminUser, setIsAdminUser] = useState(false);
   // Activity details are now shown on a dedicated user details page.
 
   useEffect(() => {
@@ -107,12 +108,14 @@ export function UserManagement() {
       setLive(true);
     };
 
-    ensureAdminAuth().then((authed) => {
+    ensureStaffAuth().then(async (authed) => {
       if (!authed || cancelled) {
         setUsers(usersFallback[lang]);
         setLive(false);
+        setIsAdminUser(false);
         return;
       }
+      setIsAdminUser(await getIsAdmin());
       loadUsers();
       channel = db
         .channel("profiles-live-users")
@@ -193,7 +196,7 @@ export function UserManagement() {
 
     try {
       setPendingId(userId);
-      await ensureAdminAuth();
+      await ensureStaffAuth();
       await db.from("profiles").update({ status: nextStatus }).eq("id", userId);
     } catch {
       setUsers((prev) =>
@@ -239,6 +242,7 @@ export function UserManagement() {
             style={{ fontSize: 13 }}
           />
         </div>
+        {isAdminUser ? (
         <button
           onClick={() => {
             setStaffError(null);
@@ -255,10 +259,11 @@ export function UserManagement() {
           <UserPlus className="h-4 w-4 text-[#D4AF37]" />
           {t("إضافة مدرب", "Add coach")}
         </button>
+        ) : null}
       </div>
 
       {/* Create staff modal */}
-      {staffOpen && (
+      {staffOpen && isAdminUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
           <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-4 sm:p-5">
             <div className="flex items-start justify-between gap-3">
@@ -350,7 +355,7 @@ export function UserManagement() {
                   setStaffError(null);
                   setStaffCreating(true);
                   try {
-                    const authed = await ensureAdminAuth();
+                    const authed = await getIsAdmin();
                     if (!authed) throw new Error(t("لا يوجد صلاحية أدمن.", "Not authorized as admin."));
                     const sessionResp = await db.auth.getSession();
                     const token = sessionResp.data.session?.access_token;
