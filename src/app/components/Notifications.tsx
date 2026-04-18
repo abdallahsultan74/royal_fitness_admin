@@ -10,6 +10,16 @@ type NotificationItem = {
   createdAt: string;
 };
 
+type UserMessageItem = {
+  id: string;
+  senderId: string | null;
+  senderLabel: string;
+  title: string | null;
+  body: string;
+  readAt: string | null;
+  createdAt: string;
+};
+
 type ProfileRow = {
   id: string;
   name: string;
@@ -39,6 +49,7 @@ export function Notifications() {
     [t],
   );
   const [items, setItems] = useState<NotificationItem[]>(fallbackNotifications);
+  const [userMessages, setUserMessages] = useState<UserMessageItem[]>([]);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [live, setLive] = useState(false);
@@ -47,6 +58,7 @@ export function Notifications() {
   const [recipients, setRecipients] = useState<ProfileRow[]>([]);
   const [targetUserId, setTargetUserId] = useState<string>("");
   const [roleFilter, setRoleFilter] = useState<"all" | "user" | "coach" | "admin">("all");
+  const [activeTab, setActiveTab] = useState<"admin" | "inbox">("admin");
 
   const canUseSessionEvenIfStaffCheckFails = async () => {
     if (!db || !hasFirebaseConfig) return false;
@@ -106,6 +118,65 @@ export function Notifications() {
       setLive(true);
     };
 
+    const loadUserMessages = async () => {
+      if (!db) return;
+      const session = await db.auth.getSession();
+      const uid = session.data.session?.user?.id;
+      if (!uid) {
+        setUserMessages([]);
+        return;
+      }
+
+      const resp = await db
+        .from("user_notifications")
+        .select("id, user_id, sender_id, type, title, body, read_at, created_at")
+        .eq("type", "message")
+        // Prefer messages addressed to this staff account.
+        .eq("user_id", uid)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (resp.error) {
+        console.error("[Notifications] loadUserMessages", resp.error);
+        // Do not treat as global auth failure; coach RLS might restrict.
+        setUserMessages([]);
+        return;
+      }
+
+      const rows = (resp.data ?? []) as any[];
+      const senderIds = Array.from(
+        new Set(rows.map((r) => r.sender_id).filter(Boolean).map((x: any) => x.toString())),
+      );
+      const senderLabelById = new Map<string, string>();
+      if (senderIds.length > 0) {
+        const profResp = await db.from("profiles").select("id,name,email").in("id", senderIds);
+        if (!profResp.error) {
+          const profs = (profResp.data ?? []) as any[];
+          profs.forEach((p) => {
+            const id = p.id?.toString();
+            if (!id) return;
+            const name = (p.name ?? "").toString().trim();
+            const email = (p.email ?? "").toString().trim();
+            senderLabelById.set(id, name || email || id);
+          });
+        }
+      }
+
+      const mapped: UserMessageItem[] = rows.map((r) => {
+        const sid = r.sender_id ? r.sender_id.toString() : null;
+        return {
+          id: r.id?.toString(),
+          senderId: sid,
+          senderLabel: sid ? (senderLabelById.get(sid) ?? sid) : t("مجهول", "Unknown"),
+          title: (r.title ?? null) ? r.title.toString() : null,
+          body: (r.body ?? "").toString(),
+          readAt: r.read_at ? r.read_at.toString() : null,
+          createdAt: r.created_at ? r.created_at.toString() : new Date().toISOString(),
+        };
+      });
+      setUserMessages(mapped);
+    };
+
     ensureStaffOrSession().then((ok) => {
       if (!ok || cancelled) {
         setAuthError(
@@ -120,9 +191,11 @@ export function Notifications() {
       setAuthError(null);
       loadNotifications();
       loadRecipients();
+      loadUserMessages();
       channel = db
         .channel("admin-notifications-live")
         .on("postgres_changes", { event: "*", schema: "public", table: "admin_notifications" }, () => loadNotifications())
+        .on("postgres_changes", { event: "*", schema: "public", table: "user_notifications" }, () => loadUserMessages())
         .subscribe();
     });
 
@@ -139,6 +212,7 @@ export function Notifications() {
   }, [fallbackNotifications, live]);
 
   const unreadCount = useMemo(() => items.filter((n) => !n.read).length, [items]);
+  const unreadUserMessages = useMemo(() => userMessages.filter((m) => !m.readAt).length, [userMessages]);
 
   const filteredRecipients = useMemo(() => {
     if (roleFilter === "all") return recipients;
@@ -219,6 +293,17 @@ export function Notifications() {
     if (error) setAuthError(error.message);
   };
 
+  const markUserMessageRead = async (item: UserMessageItem) => {
+    if (!db || !hasFirebaseConfig || !live) {
+      setUserMessages((prev) => prev.map((m) => (m.id === item.id ? { ...m, readAt: new Date().toISOString() } : m)));
+      return;
+    }
+    const ok = await ensureStaffOrSession();
+    if (!ok) return;
+    const { error } = await db.from("user_notifications").update({ read_at: new Date().toISOString() }).eq("id", item.id);
+    if (error) setAuthError(error.message);
+  };
+
   return (
     <div className="min-w-0 max-w-full space-y-4 p-4 sm:space-y-6 sm:p-6">
       <div className="min-w-0">
@@ -232,6 +317,10 @@ export function Notifications() {
         <div>
           <p className="text-muted-foreground text-xs sm:text-[12px]">{t("غير المقروءة", "Unread")}</p>
           <p className="text-2xl font-semibold text-[#D4AF37] sm:text-3xl">{unreadCount}</p>
+          <p className="mt-1 text-muted-foreground" style={{ fontSize: 12 }}>
+            {t("رسائل المستخدمين غير المقروءة:", "Unread user messages:")}{" "}
+            <span className="text-[#F5EAD4]">{unreadUserMessages}</span>
+          </p>
         </div>
         <span className={`text-xs sm:text-[12px] ${live ? "text-emerald-400" : "text-amber-400"}`}>
           {live ? t("متصل بقاعدة البيانات", "Connected to database") : t("وضع محلي", "Local mode")}
@@ -244,28 +333,84 @@ export function Notifications() {
       ) : null}
 
       <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-        <p className="text-[#F5EAD4]" style={{ fontSize: 14, fontWeight: 600 }}>
-          {t("إرسال إشعار جديد", "Send notification")}
-        </p>
-
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => setSendMode("system")}
-            className={`rounded-lg border px-3 py-2 text-start ${sendMode === "system" ? "border-[#D4AF37]/40 bg-[#D4AF37]/10 text-[#F5EAD4]" : "border-border bg-secondary text-muted-foreground"}`}
-            style={{ fontSize: 13, fontWeight: 600 }}
+            onClick={() => setActiveTab("admin")}
+            className={`rounded-full border px-3 py-1 ${activeTab === "admin" ? "border-[#D4AF37]/40 bg-[#D4AF37]/10 text-[#F5EAD4]" : "border-border text-muted-foreground"}`}
+            style={{ fontSize: 12 }}
           >
-            {t("صندوق إشعارات الأدمن (الكل)", "Admin inbox (system)")}
+            {t("صندوق الأدمن", "Admin inbox")}
           </button>
           <button
             type="button"
-            onClick={() => setSendMode("user")}
-            className={`rounded-lg border px-3 py-2 text-start ${sendMode === "user" ? "border-[#D4AF37]/40 bg-[#D4AF37]/10 text-[#F5EAD4]" : "border-border bg-secondary text-muted-foreground"}`}
-            style={{ fontSize: 13, fontWeight: 600 }}
+            onClick={() => setActiveTab("inbox")}
+            className={`rounded-full border px-3 py-1 ${activeTab === "inbox" ? "border-[#D4AF37]/40 bg-[#D4AF37]/10 text-[#F5EAD4]" : "border-border text-muted-foreground"}`}
+            style={{ fontSize: 12 }}
           >
-            {t("مستخدم محدد (مدرب/عضو/أدمن)", "Specific user (coach/member/admin)")}
+            {t("رسائل المستخدمين", "User messages")}
           </button>
         </div>
+
+        {activeTab === "inbox" ? (
+          <div className="space-y-3">
+            {userMessages.length === 0 ? (
+              <div className="rounded-xl border border-border bg-secondary/30 p-4 text-center text-muted-foreground" style={{ fontSize: 13 }}>
+                {t("لا توجد رسائل واردة بعد.", "No incoming messages yet.")}
+              </div>
+            ) : null}
+            {userMessages.map((m) => (
+              <div key={m.id} className="rounded-xl border border-border bg-secondary/20 p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 600 }}>
+                      {m.senderLabel}
+                      {m.title ? ` · ${m.title}` : ""}
+                    </p>
+                    <p className="text-muted-foreground text-xs sm:text-[12px]">
+                      {new Date(m.createdAt).toLocaleString(lang === "ar" ? "ar-EG" : "en-US")}
+                    </p>
+                  </div>
+                  {!m.readAt ? (
+                    <button
+                      type="button"
+                      onClick={() => markUserMessageRead(m)}
+                      className="w-full shrink-0 rounded-md border border-border px-3 py-1.5 text-muted-foreground hover:text-[#D4AF37] sm:w-auto"
+                    >
+                      {t("تحديد كمقروء", "Mark as read")}
+                    </button>
+                  ) : (
+                    <span className="text-emerald-400 text-xs sm:text-[12px]">{t("مقروء", "Read")}</span>
+                  )}
+                </div>
+                <p className="mt-2 break-words text-muted-foreground text-sm sm:text-[13px]">{m.body}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <>
+            <p className="text-[#F5EAD4]" style={{ fontSize: 14, fontWeight: 600 }}>
+              {t("إرسال إشعار جديد", "Send notification")}
+            </p>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setSendMode("system")}
+                className={`rounded-lg border px-3 py-2 text-start ${sendMode === "system" ? "border-[#D4AF37]/40 bg-[#D4AF37]/10 text-[#F5EAD4]" : "border-border bg-secondary text-muted-foreground"}`}
+                style={{ fontSize: 13, fontWeight: 600 }}
+              >
+                {t("صندوق إشعارات الأدمن (الكل)", "Admin inbox (system)")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSendMode("user")}
+                className={`rounded-lg border px-3 py-2 text-start ${sendMode === "user" ? "border-[#D4AF37]/40 bg-[#D4AF37]/10 text-[#F5EAD4]" : "border-border bg-secondary text-muted-foreground"}`}
+                style={{ fontSize: 13, fontWeight: 600 }}
+              >
+                {t("مستخدم محدد (مدرب/عضو/أدمن)", "Specific user (coach/member/admin)")}
+              </button>
+            </div>
 
         {sendMode === "user" ? (
           <div className="space-y-2">
@@ -327,6 +472,8 @@ export function Notifications() {
         >
           {t("إرسال", "Publish")}
         </button>
+          </>
+        )}
       </div>
 
       <div className="space-y-3">
