@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, MoreHorizontal, Shield, ShieldOff, Mail, Eye } from "lucide-react";
+import { Search, MoreHorizontal, Shield, ShieldOff, Mail, Eye, UserPlus } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useLang } from "./LanguageContext";
 import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
@@ -38,6 +38,13 @@ export function UserManagement() {
   const [search, setSearch] = useState("");
   const [live, setLive] = useState(false);
   const [pendingId, setPendingId] = useState<string | number | null>(null);
+  const [staffOpen, setStaffOpen] = useState(false);
+  const [staffRole, setStaffRole] = useState<"coach" | "admin">("coach");
+  const [staffName, setStaffName] = useState("");
+  const [staffEmail, setStaffEmail] = useState("");
+  const [staffPassword, setStaffPassword] = useState("");
+  const [staffCreating, setStaffCreating] = useState(false);
+  const [staffError, setStaffError] = useState<string | null>(null);
   // Activity details are now shown on a dedicated user details page.
 
   useEffect(() => {
@@ -207,17 +214,157 @@ export function UserManagement() {
       </div>
 
       {/* Search */}
-      <div className="relative w-full max-w-full sm:max-w-md">
-        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder={t("ابحث بالاسم أو البريد الإلكتروني...", "Search by name or email...")}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full ps-10 pe-4 py-2.5 rounded-lg bg-card border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
-          style={{ fontSize: 13 }}
-        />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full max-w-full sm:max-w-md">
+          <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder={t("ابحث بالاسم أو البريد الإلكتروني...", "Search by name or email...")}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full ps-10 pe-4 py-2.5 rounded-lg bg-card border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
+            style={{ fontSize: 13 }}
+          />
+        </div>
+        <button
+          onClick={() => {
+            setStaffError(null);
+            setStaffRole("coach");
+            setStaffName("");
+            setStaffEmail("");
+            setStaffPassword("");
+            setStaffOpen(true);
+          }}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-3 py-2 text-[#F5EAD4] hover:bg-[#D4AF37]/15"
+          style={{ fontSize: 13, fontWeight: 600 }}
+          title={t("إضافة مدرب/أدمن", "Add coach/admin")}
+        >
+          <UserPlus className="h-4 w-4 text-[#D4AF37]" />
+          {t("إضافة مدرب", "Add coach")}
+        </button>
       </div>
+
+      {/* Create staff modal */}
+      {staffOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-[#F5EAD4]" style={{ fontSize: 16, fontWeight: 700 }}>
+                  {t("إضافة حساب مدرب/أدمن", "Create coach/admin account")}
+                </h3>
+                <p className="text-muted-foreground mt-1" style={{ fontSize: 12 }}>
+                  {t("هيتعمل باسورد مؤقت، والمدرب يقدر يغيّره بعدين.", "A temporary password will be set; they can change it later.")}
+                </p>
+              </div>
+              <button
+                onClick={() => setStaffOpen(false)}
+                className="rounded-lg border border-border bg-secondary px-2.5 py-1.5 text-muted-foreground hover:text-[#F5EAD4]"
+                style={{ fontSize: 12 }}
+              >
+                {t("إغلاق", "Close")}
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setStaffRole("coach")}
+                  className={`rounded-lg border px-3 py-2 ${staffRole === "coach" ? "border-[#D4AF37]/40 bg-[#D4AF37]/10 text-[#F5EAD4]" : "border-border bg-secondary text-muted-foreground"}`}
+                  style={{ fontSize: 13, fontWeight: 600 }}
+                >
+                  {t("مدرب", "Coach")}
+                </button>
+                <button
+                  onClick={() => setStaffRole("admin")}
+                  className={`rounded-lg border px-3 py-2 ${staffRole === "admin" ? "border-[#D4AF37]/40 bg-[#D4AF37]/10 text-[#F5EAD4]" : "border-border bg-secondary text-muted-foreground"}`}
+                  style={{ fontSize: 13, fontWeight: 600 }}
+                >
+                  {t("أدمن", "Admin")}
+                </button>
+              </div>
+
+              <div>
+                <label className="text-muted-foreground" style={{ fontSize: 12 }}>
+                  {t("الاسم", "Name")}
+                </label>
+                <input
+                  value={staffName}
+                  onChange={(e) => setStaffName(e.target.value)}
+                  className="mt-1 w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4] focus:outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
+                  style={{ fontSize: 13 }}
+                  placeholder={t("اسم المدرب", "Coach name")}
+                />
+              </div>
+              <div>
+                <label className="text-muted-foreground" style={{ fontSize: 12 }}>
+                  {t("الإيميل", "Email")}
+                </label>
+                <input
+                  value={staffEmail}
+                  onChange={(e) => setStaffEmail(e.target.value)}
+                  className="mt-1 w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4] focus:outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
+                  style={{ fontSize: 13 }}
+                  placeholder="coach@email.com"
+                  dir="ltr"
+                />
+              </div>
+              <div>
+                <label className="text-muted-foreground" style={{ fontSize: 12 }}>
+                  {t("باسورد مؤقت", "Temporary password")}
+                </label>
+                <input
+                  value={staffPassword}
+                  onChange={(e) => setStaffPassword(e.target.value)}
+                  className="mt-1 w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4] focus:outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
+                  style={{ fontSize: 13 }}
+                  placeholder={t("على الأقل 8 حروف/أرقام", "At least 8 characters")}
+                  type="password"
+                  dir="ltr"
+                />
+              </div>
+
+              {staffError && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-red-200" style={{ fontSize: 12 }}>
+                  {staffError}
+                </div>
+              )}
+
+              <button
+                disabled={staffCreating || !live || !db || !hasFirebaseConfig}
+                onClick={async () => {
+                  if (!db || !hasFirebaseConfig) return;
+                  setStaffError(null);
+                  setStaffCreating(true);
+                  try {
+                    const authed = await ensureAdminAuth();
+                    if (!authed) throw new Error(t("لا يوجد صلاحية أدمن.", "Not authorized as admin."));
+                    const res = await db.functions.invoke("create-staff-user", {
+                      body: {
+                        email: staffEmail,
+                        password: staffPassword,
+                        name: staffName,
+                        role: staffRole,
+                      },
+                    });
+                    if (res.error) throw res.error;
+                    setStaffOpen(false);
+                  } catch (e: any) {
+                    const msg = e?.message ? String(e.message) : String(e);
+                    setStaffError(msg);
+                  } finally {
+                    setStaffCreating(false);
+                  }
+                }}
+                className="mt-1 inline-flex items-center justify-center gap-2 rounded-lg border border-[#D4AF37]/30 bg-[#D4AF37] px-3 py-2 text-[#0B1B14] hover:brightness-110 disabled:opacity-60"
+                style={{ fontSize: 13, fontWeight: 800 }}
+              >
+                {staffCreating ? t("جاري الإنشاء...", "Creating...") : t("إنشاء الحساب", "Create account")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Table */}
       <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
