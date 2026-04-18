@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Plus, Edit3, Trash2, Eye, ChevronDown, Filter, Upload, Mic, Square, Play, Pause, Trash } from "lucide-react";
 import { useLang } from "./LanguageContext";
-import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
+import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
 
 const exercisesFallback = {
   ar: [
@@ -147,6 +147,14 @@ export function ExerciseManagement() {
     const loadExercises = async () => {
       if (!db) return;
       const resp = await db.from("exercises").select("*").order("name", { ascending: true });
+      if (resp.error) {
+        console.error("[ExerciseManagement] loadExercises", resp.error);
+        if (!cancelled) {
+          setLive(false);
+          setExercises(exercisesFallback[lang]);
+        }
+        return;
+      }
       const rows = resp.data ?? [];
       const mapped = rows.map((data, idx) => {
         const diff = data.level?.toString() ?? data.difficulty?.toString() ?? (lang === "ar" ? "مبتدئ" : "Beginner");
@@ -165,11 +173,13 @@ export function ExerciseManagement() {
           ttsScriptAr: data.tts_script_ar?.toString(),
         };
       });
-      setExercises(mapped.length ? mapped : exercisesFallback[lang]);
-      setLive(mapped.length > 0);
+      if (!cancelled) {
+        setLive(true);
+        setExercises(mapped);
+      }
     };
 
-    ensureAdminAuth().then((authed) => {
+    ensureStaffAuth().then((authed) => {
       if (!authed || cancelled) {
         setExercises(exercisesFallback[lang]);
         setLive(false);
@@ -422,7 +432,7 @@ export function ExerciseManagement() {
       return;
     }
 
-    await ensureAdminAuth();
+    await ensureStaffAuth();
     setBusyUpload(true);
     let mediaUrl = input.gifUrl || null;
     let mediaType: "image" | "video" = "image";
@@ -490,7 +500,7 @@ export function ExerciseManagement() {
 
     try {
       setPendingId(exercise.id);
-      await ensureAdminAuth();
+      await ensureStaffAuth();
       setBusyUpload(true);
       let mediaUrl = input.gifUrl || exercise.gifUrl || null;
       let mediaType: "image" | "video" = exercise.mediaType ?? "image";
@@ -542,7 +552,7 @@ export function ExerciseManagement() {
 
     try {
       setPendingId(exercise.id);
-      await ensureAdminAuth();
+      await ensureStaffAuth();
       await db.from("exercises").delete().eq("id", exercise.id);
     } finally {
       setPendingId(null);
@@ -669,7 +679,9 @@ export function ExerciseManagement() {
         </div>
         {filtered.length === 0 && (
           <div className="py-12 text-center text-muted-foreground" style={{ fontSize: 14 }}>
-            {t("لا توجد تمارين تطابق الفلاتر الحالية.", "No exercises match the current filters.")}
+            {exercises.length === 0 && live
+              ? t("لا توجد تمارين في قاعدة البيانات بعد.", "No exercises in the database yet.")
+              : t("لا توجد تمارين تطابق الفلاتر الحالية.", "No exercises match the current filters.")}
           </div>
         )}
       </div>

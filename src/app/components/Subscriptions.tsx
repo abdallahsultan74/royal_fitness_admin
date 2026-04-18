@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLang } from "./LanguageContext";
-import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
+import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
 
 type Subscription = {
   id: string | number;
@@ -93,7 +93,7 @@ export function Subscriptions() {
         });
 
         setSubscriptions(mapped);
-        setLive(mapped.length > 0);
+        setLive(true);
       } catch (e) {
         console.error("[Subscriptions] loadRequests catch", e);
         setAuthError((e as Error)?.message ?? "Failed to load subscription requests.");
@@ -102,7 +102,7 @@ export function Subscriptions() {
       }
     };
 
-    ensureAdminAuth().then(async (authed) => {
+    ensureStaffAuth().then(async (authed) => {
       if (!authed || cancelled) {
         if (!authed) {
           setAuthError("Admin auth failed. Check VITE_ADMIN_EMAIL / VITE_ADMIN_PASSWORD and ensure VITE_LOCAL_AUTH=false in Vercel env.");
@@ -118,15 +118,17 @@ export function Subscriptions() {
         const session = await db.auth.getSession();
         console.debug("[Subscriptions] session user:", session.data.session?.user?.id, session.data.session?.user?.email);
 
-        const isAdminResp = await db.rpc("is_admin");
+        const [isAdminResp, isCoachResp] = await Promise.all([db.rpc("is_admin"), db.rpc("is_coach")]);
         if (isAdminResp?.error) {
           setAuthError(isAdminResp.error.message);
+        } else if (isCoachResp?.error) {
+          setAuthError(isCoachResp.error.message);
         } else {
-          const isAdmin = typeof isAdminResp.data === "boolean"
-            ? isAdminResp.data
-            : (Array.isArray(isAdminResp.data) ? Boolean(isAdminResp.data[0]) : Boolean(isAdminResp.data));
-          if (!isAdmin) {
-            setAuthError("is_admin() returned false in this session (JWT/RLS context missing).");
+          const rpcBool = (data: unknown) =>
+            typeof data === "boolean" ? data : Array.isArray(data) ? Boolean(data[0]) : Boolean(data);
+          const isStaff = rpcBool(isAdminResp.data) || rpcBool(isCoachResp.data);
+          if (!isStaff) {
+            setAuthError("Staff role missing: is_admin() and is_coach() are false (check JWT / profiles.role).");
           }
         }
 
@@ -227,7 +229,7 @@ export function Subscriptions() {
     }
     try {
       setPendingId(item.id);
-      await ensureAdminAuth();
+      await ensureStaffAuth();
       await db.from("subscription_requests").update({ status: next }).eq("id", item.id);
       if (next === "approved") {
         await db.from("profiles").update({ plan: item.plan.toLowerCase(), status: "active" }).eq("email", item.userEmail);
