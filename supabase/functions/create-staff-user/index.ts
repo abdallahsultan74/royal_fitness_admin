@@ -1,5 +1,6 @@
 // Supabase Edge Function: create staff user (coach/admin) with temp password.
-// Security: requires caller to be authenticated AND is_admin() = true.
+// Security: requires caller JWT + is_admin() = true (rpc). Deploy with --no-verify-jwt
+// if the project uses ES256 access tokens (gateway only supports HS256 verification).
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
