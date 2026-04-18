@@ -7,6 +7,7 @@ import {
   TrendingDown,
   ArrowUpLeft,
   ArrowUpRight,
+  Eye,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -19,6 +20,7 @@ import {
   AreaChart,
 } from "recharts";
 import { useLang } from "./LanguageContext";
+import { UserActivityDrawer } from "./UserActivityDrawer";
 import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
 
 export function Dashboard() {
@@ -26,7 +28,8 @@ export function Dashboard() {
   const [usersCount, setUsersCount] = useState<number | null>(null);
   const [exercisesCount, setExercisesCount] = useState<number | null>(null);
   const [revenue, setRevenue] = useState<number | null>(null);
-  const [recentUsers, setRecentUsers] = useState<{ name: string; plan: string; time: string }[]>([]);
+  const [recentUsers, setRecentUsers] = useState<{ id?: string; name: string; plan: string; time: string }[]>([]);
+  const [activityUser, setActivityUser] = useState<{ id: string; name: string } | null>(null);
   const [chartData, setChartData] = useState<{ month: string; users: number; revenue: number }[]>([]);
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
   const [avgBmi, setAvgBmi] = useState<number | null>(null);
@@ -50,6 +53,7 @@ export function Dashboard() {
         const createdAtRaw = data.created_at?.toString();
         const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
         return {
+          id: data.id?.toString(),
           name: data.name ?? (isRTL ? "مستخدم" : "User"),
           plan: data.plan ?? t("تجريبي", "Trial"),
           createdAt,
@@ -91,6 +95,7 @@ export function Dashboard() {
         sortedUsers.slice(0, 5).map((user) => {
           const minutesAgo = Math.max(1, Math.round((now - user.createdAt.getTime()) / (1000 * 60)));
           return {
+            id: user.id,
             name: user.name,
             plan: user.plan,
             time: formatter.format(-minutesAgo, "minute"),
@@ -321,16 +326,26 @@ export function Dashboard() {
           </div>
           <div className="space-y-3">
             {tableRecentUsers.map((u) => (
-              <div key={u.name} className="flex items-center gap-3 p-3 rounded-lg hover:bg-secondary/60 transition-colors">
-                <div className="w-9 h-9 rounded-full border border-[#D4AF37]/30 bg-secondary flex items-center justify-center text-[#D4AF37]" style={{ fontSize: 11, fontWeight: 600 }}>
+              <div key={u.name + u.time} className="flex items-center gap-3 rounded-lg p-3 transition-colors hover:bg-secondary/60">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#D4AF37]/30 bg-secondary text-[#D4AF37]" style={{ fontSize: 11, fontWeight: 600 }}>
                   {u.name.split(" ").map((n) => n[0]).join("")}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[#F5EAD4] truncate" style={{ fontSize: 13 }}>{u.name}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[#F5EAD4]" style={{ fontSize: 13 }}>{u.name}</p>
                   <p className="text-muted-foreground" style={{ fontSize: 11 }}>{u.time}</p>
                 </div>
+                {u.id ? (
+                  <button
+                    type="button"
+                    title={t("عرض النشاط", "View activity")}
+                    className="shrink-0 rounded-lg border border-[#D4AF37]/40 p-2 text-[#D4AF37] transition-colors hover:bg-[#D4AF37]/15"
+                    onClick={() => setActivityUser({ id: u.id!, name: u.name })}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </button>
+                ) : null}
                 <span
-                  className={`px-2 py-0.5 rounded-full ${
+                  className={`shrink-0 px-2 py-0.5 rounded-full ${
                     u.plan === planPro
                       ? "bg-[#D4AF37]/10 text-[#D4AF37]"
                       : u.plan === planTrial
@@ -346,6 +361,12 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+      <UserActivityDrawer
+        open={activityUser !== null}
+        userId={activityUser?.id ?? null}
+        userName={activityUser?.name ?? ""}
+        onClose={() => setActivityUser(null)}
+      />
     </div>
   );
 }

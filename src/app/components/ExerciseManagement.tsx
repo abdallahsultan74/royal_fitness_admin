@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Plus, Edit3, Trash2, Eye, ChevronDown, Filter } from "lucide-react";
+import { Search, Plus, Edit3, Trash2, Eye, ChevronDown, Filter, Upload } from "lucide-react";
 import { useLang } from "./LanguageContext";
 import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
 
@@ -626,32 +626,54 @@ export function ExerciseManagement() {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-3">
                   <div>
-                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("رفع صورة/فيديو (حد 10MB)", "Upload image/video (max 10MB)")}</label>
-                    <input
-                      type="file"
-                      accept="image/*,video/*"
-                      onChange={(e) => setSelectedMediaFile(e.target.files?.[0] ?? null)}
-                      className="w-full text-muted-foreground"
-                    />
-                    <p className="text-muted-foreground mt-1" style={{ fontSize: 11 }}>
+                    <p className="mb-2 text-muted-foreground" style={{ fontSize: 12 }}>
+                      {t("رفع صورة/فيديو (حد 10MB)", "Upload image/video (max 10MB)")}
+                    </p>
+                    <label className="group flex min-h-[96px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-[#D4AF37]/55 bg-gradient-to-b from-[#D4AF37]/14 to-[#D4AF37]/06 px-4 py-5 text-center shadow-[0_0_24px_rgba(212,175,55,0.12)] transition-all hover:border-[#D4AF37] hover:from-[#D4AF37]/22 hover:shadow-[0_0_32px_rgba(212,175,55,0.2)] focus-within:border-[#D4AF37] focus-within:ring-2 focus-within:ring-[#D4AF37]/35">
+                      <Upload className="h-8 w-8 text-[#D4AF37] opacity-90 group-hover:opacity-100" aria-hidden />
+                      <span className="font-semibold text-[#D4AF37]" style={{ fontSize: 14 }}>
+                        {t("اختر ملف الميديا", "Choose media file")}
+                      </span>
+                      <span className="text-muted-foreground" style={{ fontSize: 11 }}>
+                        {t("PNG أو JPG أو MP4 حتى 10MB", "PNG, JPG or MP4 up to 10MB")}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*,video/*"
+                        onChange={(e) => setSelectedMediaFile(e.target.files?.[0] ?? null)}
+                        className="sr-only"
+                      />
+                    </label>
+                    <p className="mt-2 text-muted-foreground" style={{ fontSize: 11 }}>
                       {selectedMediaFile
-                        ? `${selectedMediaFile.name} - ${(selectedMediaFile.size / (1024 * 1024)).toFixed(2)}MB`
+                        ? `${selectedMediaFile.name} — ${(selectedMediaFile.size / (1024 * 1024)).toFixed(2)} MB`
                         : t("يمكنك رفع صورة أو فيديو أو استخدام رابط الميديا بالأعلى", "You can upload an image/video or use the media URL above")}
                     </p>
                   </div>
                   <div>
-                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("رفع ملف صوتي (حد 10MB)", "Upload audio (max 10MB)")}</label>
-                    <input
-                      type="file"
-                      accept="audio/*"
-                      onChange={(e) => setSelectedAudioFile(e.target.files?.[0] ?? null)}
-                      className="w-full text-muted-foreground"
-                    />
-                    <p className="text-muted-foreground mt-1" style={{ fontSize: 11 }}>
+                    <p className="mb-2 text-muted-foreground" style={{ fontSize: 12 }}>
+                      {t("رفع ملف صوتي (حد 10MB)", "Upload audio (max 10MB)")}
+                    </p>
+                    <label className="group flex min-h-[96px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-[#D4AF37]/55 bg-gradient-to-b from-[#D4AF37]/14 to-[#D4AF37]/06 px-4 py-5 text-center shadow-[0_0_24px_rgba(212,175,55,0.12)] transition-all hover:border-[#D4AF37] hover:from-[#D4AF37]/22 hover:shadow-[0_0_32px_rgba(212,175,55,0.2)] focus-within:border-[#D4AF37] focus-within:ring-2 focus-within:ring-[#D4AF37]/35">
+                      <Upload className="h-8 w-8 text-[#D4AF37] opacity-90 group-hover:opacity-100" aria-hidden />
+                      <span className="font-semibold text-[#D4AF37]" style={{ fontSize: 14 }}>
+                        {t("اختر ملف الصوت", "Choose audio file")}
+                      </span>
+                      <span className="text-muted-foreground" style={{ fontSize: 11 }}>
+                        {t("MP3 أو M4A حتى 10MB", "MP3 or M4A up to 10MB")}
+                      </span>
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        onChange={(e) => setSelectedAudioFile(e.target.files?.[0] ?? null)}
+                        className="sr-only"
+                      />
+                    </label>
+                    <p className="mt-2 text-muted-foreground" style={{ fontSize: 11 }}>
                       {selectedAudioFile
-                        ? `${selectedAudioFile.name} - ${(selectedAudioFile.size / (1024 * 1024)).toFixed(2)}MB`
+                        ? `${selectedAudioFile.name} — ${(selectedAudioFile.size / (1024 * 1024)).toFixed(2)} MB`
                         : t("اختياري: ملف صوتي جاهز للتشغيل داخل التطبيق", "Optional: ready-made audio file for the app")}
                     </p>
                   </div>

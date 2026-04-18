@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, MoreHorizontal, Shield, ShieldOff, Mail } from "lucide-react";
+import { Search, MoreHorizontal, Shield, ShieldOff, Mail, Eye } from "lucide-react";
 import { useLang } from "./LanguageContext";
+import { UserActivityDrawer } from "./UserActivityDrawer";
 import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
 
 const usersFallback = {
@@ -36,6 +37,7 @@ export function UserManagement() {
   const [search, setSearch] = useState("");
   const [live, setLive] = useState(false);
   const [pendingId, setPendingId] = useState<string | number | null>(null);
+  const [activityUser, setActivityUser] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     if (!db || !hasFirebaseConfig) {
@@ -275,7 +277,18 @@ export function UserManagement() {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+                    {live && typeof u.id === "string" ? (
+                      <button
+                        type="button"
+                        onClick={() => setActivityUser({ id: u.id as string, name: u.name })}
+                        className="cursor-pointer rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-[#D4AF37]"
+                        title={t("عرض النشاط", "View activity")}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                    ) : null}
                     <button
+                      type="button"
                       onClick={() => handleSendEmail(u.email)}
                       className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-[#D4AF37] transition-colors cursor-pointer"
                       title={t("بريد", "Email")}
@@ -283,6 +296,7 @@ export function UserManagement() {
                       <Mail className="w-4 h-4" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleToggleStatus(u.id, u.status)}
                       disabled={pendingId === u.id}
                       className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-red-400 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
@@ -290,8 +304,8 @@ export function UserManagement() {
                     >
                       {isActiveStatus(u.status) ? <ShieldOff className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
                     </button>
-                    <button className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-[#F5EAD4] transition-colors cursor-pointer">
-                      <MoreHorizontal className="w-4 h-4" />
+                    <button type="button" className="cursor-pointer rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-[#F5EAD4]">
+                      <MoreHorizontal className="h-4 w-4" />
                     </button>
                   </div>
                 </td>
@@ -306,6 +320,12 @@ export function UserManagement() {
           </div>
         )}
       </div>
+      <UserActivityDrawer
+        open={activityUser !== null}
+        userId={activityUser?.id ?? null}
+        userName={activityUser?.name ?? ""}
+        onClose={() => setActivityUser(null)}
+      />
     </div>
   );
 }
