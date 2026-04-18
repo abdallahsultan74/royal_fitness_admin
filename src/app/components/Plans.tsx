@@ -128,8 +128,19 @@ export function Plans() {
     setSaving(true);
     setAuthError(null);
     try {
-      await ensureStaffAuth();
+      const authed = await ensureStaffAuth();
+      if (!authed) {
+        setAuthError(t("فشل التحقق من صلاحيات الموظف.", "Staff auth failed."));
+        return;
+      }
+      const session = await db.auth.getSession();
+      const uid = session.data.session?.user?.id;
+      if (!uid) {
+        setAuthError(t("لا يوجد مستخدم في الجلسة.", "Missing session user."));
+        return;
+      }
       const payload: any = {
+        ...(editing ? {} : { created_by: uid }),
         title: trimmed,
         description: desc.trim() || null,
         level,
@@ -139,7 +150,10 @@ export function Plans() {
       const resp = editing
         ? await db.from("training_plans").update(payload).eq("id", editing.id)
         : await db.from("training_plans").insert(payload);
-      if (resp.error) setAuthError(resp.error.message);
+      if (resp.error) {
+        setAuthError(resp.error.message);
+        return;
+      }
       setOpenForm(false);
       resetForm();
       loadPlans();
