@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLang } from "./LanguageContext";
-import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
+import { db, ensureStaffAuth, hasFirebaseConfig, isLocalAuthMode } from "../firebase";
 
 type Subscription = {
   id: string | number;
@@ -105,7 +105,11 @@ export function Subscriptions() {
     ensureStaffAuth().then(async (authed) => {
       if (!authed || cancelled) {
         if (!authed) {
-          setAuthError("Admin auth failed. Check VITE_ADMIN_EMAIL / VITE_ADMIN_PASSWORD and ensure VITE_LOCAL_AUTH=false in Vercel env.");
+          setAuthError(
+            isLocalAuthMode
+              ? "Staff auth failed in local demo mode (unexpected)."
+              : "Staff auth failed: sign in on the login page as a user with profiles.role = admin or coach, OR set VITE_ADMIN_EMAIL + VITE_ADMIN_PASSWORD on Vercel to a Supabase user that has admin/coach role. Wrong password or missing role on that user also causes this.",
+          );
           setSubscriptions([]);
           setLive(false);
         }

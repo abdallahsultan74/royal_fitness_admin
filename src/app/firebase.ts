@@ -12,6 +12,9 @@ export const db: any = hasFirebaseConfig
 const adminEmail = import.meta.env.VITE_ADMIN_EMAIL as string | undefined;
 const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD as string | undefined;
 
+/** When true, login UI uses localStorage only; staff checks should not require env bot credentials. */
+export const isLocalAuthMode = import.meta.env.VITE_LOCAL_AUTH === "true";
+
 let staffAuthPromise: Promise<boolean> | null = null;
 let adminAuthPromise: Promise<boolean> | null = null;
 
@@ -62,8 +65,17 @@ export function ensureStaffAuth(): Promise<boolean> {
   staffAuthPromise = (async () => {
     if (!db || !hasFirebaseConfig) return false;
 
+    if (isLocalAuthMode) {
+      return true;
+    }
+
     const tryEnvSignIn = async (): Promise<boolean> => {
-      if (!adminEmail || !adminPassword) return false;
+      if (!adminEmail || !adminPassword) {
+        if (import.meta.env.DEV) {
+          console.warn("[ensureStaffAuth] VITE_ADMIN_EMAIL / VITE_ADMIN_PASSWORD missing; cannot fall back to env bot user.");
+        }
+        return false;
+      }
       try {
         await db.auth.signOut();
       } catch {
@@ -74,9 +86,21 @@ export function ensureStaffAuth(): Promise<boolean> {
           email: adminEmail,
           password: adminPassword,
         });
-        if (result.error) return false;
-        return getIsStaff();
-      } catch {
+        if (result.error) {
+          if (import.meta.env.DEV) {
+            console.warn("[ensureStaffAuth] signInWithPassword (env bot):", result.error.message);
+          }
+          return false;
+        }
+        const ok = await getIsStaff();
+        if (!ok && import.meta.env.DEV) {
+          console.warn(
+            "[ensureStaffAuth] Env user signed in but is_admin/is_coach are false — set profiles.role to admin or coach for that user in Supabase.",
+          );
+        }
+        return ok;
+      } catch (e) {
+        if (import.meta.env.DEV) console.warn("[ensureStaffAuth] env sign-in exception:", e);
         return false;
       }
     };
@@ -103,6 +127,10 @@ export function ensureAdminAuth(): Promise<boolean> {
 
   adminAuthPromise = (async () => {
     if (!db || !hasFirebaseConfig) return false;
+
+    if (isLocalAuthMode) {
+      return true;
+    }
 
     const tryEnvSignIn = async (): Promise<boolean> => {
       if (!adminEmail || !adminPassword) return false;
