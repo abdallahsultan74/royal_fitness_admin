@@ -185,10 +185,29 @@ export function Plans() {
     setSaving(true);
     setAuthError(null);
     try {
-      await ensureStaffAuth();
-      const rows = selectedUserIds.map((uid) => ({ plan_id: assignPlan.id, user_id: uid, status: "active" }));
+      const authed = await ensureStaffAuth();
+      if (!authed) {
+        setAuthError(t("فشل التحقق من صلاحيات الموظف.", "Staff auth failed."));
+        return;
+      }
+      const session = await db.auth.getSession();
+      const staffId = session.data.session?.user?.id;
+      if (!staffId) {
+        setAuthError(t("لا يوجد مستخدم في الجلسة.", "Missing session user."));
+        return;
+      }
+
+      const rows = selectedUserIds.map((uid) => ({
+        plan_id: assignPlan.id,
+        user_id: uid,
+        assigned_by: staffId,
+        status: "active",
+      }));
       const resp = await db.from("plan_assignments").insert(rows);
-      if (resp.error) setAuthError(resp.error.message);
+      if (resp.error) {
+        setAuthError(resp.error.message);
+        return;
+      }
       setAssignOpen(false);
       setAssignPlan(null);
       setSelectedUserIds([]);
