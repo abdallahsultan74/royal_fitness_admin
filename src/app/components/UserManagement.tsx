@@ -347,7 +347,19 @@ export function UserManagement() {
                         role: staffRole,
                       },
                     });
-                    if (res.error) throw res.error;
+                    if (res.error) {
+                      let detail = String(res.error.message ?? res.error);
+                      const ctx = (res.error as { context?: Response }).context;
+                      if (ctx && typeof ctx.json === "function") {
+                        try {
+                          const j = (await ctx.json()) as { error?: string };
+                          if (j?.error) detail = `${detail}: ${j.error}`;
+                        } catch {
+                          /* ignore */
+                        }
+                      }
+                      throw new Error(detail);
+                    }
                     setStaffOpen(false);
                   } catch (e: any) {
                     const msg = e?.message ? String(e.message) : String(e);
