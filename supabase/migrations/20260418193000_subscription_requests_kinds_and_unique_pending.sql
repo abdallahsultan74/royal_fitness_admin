@@ -9,6 +9,37 @@ alter table public.subscription_requests
 alter table public.subscription_requests
   add constraint subscription_requests_kind_check check (request_kind in ('activate', 'renew'));
 
+-- Cleanup: ensure legacy rows have request_kind and dedupe pending rows before adding unique index.
+-- Keep the most recent pending request per (user_id, request_kind); reject older duplicates.
+update public.subscription_requests
+set request_kind = 'activate'
+where request_kind is null or btrim(request_kind) = '';
+
+with ranked as (
+  select
+    id,
+    user_id,
+    request_kind,
+    status,
+    created_at,
+    row_number() over (
+      partition by user_id, request_kind
+      order by created_at desc, id desc
+    ) as rn
+  from public.subscription_requests
+  where status = 'pending'
+)
+update public.subscription_requests sr
+set
+  status = 'rejected',
+  note = case
+    when sr.note is null or btrim(sr.note) = '' then 'Auto-rejected duplicate pending request during migration'
+    else sr.note || ' | Auto-rejected duplicate pending request during migration'
+  end
+from ranked r
+where sr.id = r.id
+  and r.rn > 1;
+
 -- One pending request per user per kind.
 create unique index if not exists idx_subscription_requests_one_pending_per_kind
   on public.subscription_requests (user_id, request_kind)
