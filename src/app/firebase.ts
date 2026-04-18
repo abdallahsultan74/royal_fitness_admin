@@ -43,24 +43,35 @@ export function ensureAdminAuth(): Promise<boolean> {
       }
     };
 
-    // 1) If we already have a session, validate it with RLS by calling is_admin()
+    const tryEnvSignIn = async (): Promise<boolean> => {
+      if (!adminEmail || !adminPassword) return false;
+      try {
+        await db.auth.signOut();
+      } catch {
+        /* ignore */
+      }
+      try {
+        const result = await db.auth.signInWithPassword({
+          email: adminEmail,
+          password: adminPassword,
+        });
+        if (result.error) return false;
+        return isAdminForCurrentSession();
+      } catch {
+        return false;
+      }
+    };
+
+    // 1) If we already have a session, validate admin; if not admin but env creds exist, switch to env admin (Vercel / shared browser).
     const current = await db.auth.getSession();
     if (current.data.session?.user) {
-      return isAdminForCurrentSession();
+      const ok = await isAdminForCurrentSession();
+      if (ok) return true;
+      return tryEnvSignIn();
     }
 
-    // 2) Otherwise, sign in with admin credentials (from Vercel env)
-    if (!adminEmail || !adminPassword) return false;
-    try {
-      const result = await db.auth.signInWithPassword({
-        email: adminEmail,
-        password: adminPassword,
-      });
-      if (result.error) return false;
-      return isAdminForCurrentSession();
-    } catch {
-      return false;
-    }
+    // 2) No session: sign in with admin credentials from env (Vercel)
+    return tryEnvSignIn();
   })().finally(() => {
     adminAuthPromise = null;
   });
