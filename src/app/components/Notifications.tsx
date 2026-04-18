@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLang } from "./LanguageContext";
-import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
+import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
 
 type NotificationItem = {
   id: string | number;
@@ -48,6 +48,22 @@ export function Notifications() {
   const [targetUserId, setTargetUserId] = useState<string>("");
   const [roleFilter, setRoleFilter] = useState<"all" | "user" | "coach" | "admin">("all");
 
+  const canUseSessionEvenIfStaffCheckFails = async () => {
+    if (!db || !hasFirebaseConfig) return false;
+    try {
+      const session = await db.auth.getSession();
+      return Boolean(session.data.session?.user?.id);
+    } catch {
+      return false;
+    }
+  };
+
+  const ensureStaffOrSession = async () => {
+    const authed = await ensureStaffAuth();
+    if (authed) return true;
+    return canUseSessionEvenIfStaffCheckFails();
+  };
+
   useEffect(() => {
     if (!db || !hasFirebaseConfig) return;
     let channel: ReturnType<typeof db.channel> | null = null;
@@ -59,12 +75,25 @@ export function Notifications() {
         .select("id,name,email,role")
         .order("name", { ascending: true })
         .limit(300);
+      if (resp.error) {
+        // Coaches may not have access to list all profiles depending on RLS; do not block page.
+        console.error("[Notifications] loadRecipients", resp.error);
+        setRecipients([]);
+        return;
+      }
       const rows = (resp.data ?? []) as ProfileRow[];
       setRecipients(rows);
     };
 
     const loadNotifications = async () => {
       const resp = await db.from("admin_notifications").select("*").order("created_at", { ascending: false });
+      if (resp.error) {
+        console.error("[Notifications] loadNotifications", resp.error);
+        setAuthError(resp.error.message);
+        setItems([]);
+        setLive(false);
+        return;
+      }
       const rows = resp.data ?? [];
       const mapped = rows.map((data: Record<string, unknown>) => ({
         id: data.id as string,
@@ -77,12 +106,12 @@ export function Notifications() {
       setLive(true);
     };
 
-    ensureAdminAuth().then((authed) => {
-      if (!authed || cancelled) {
+    ensureStaffOrSession().then((ok) => {
+      if (!ok || cancelled) {
         setAuthError(
           t(
-            "فشل دخول الأدمن. إمّا سجّل دخولك بحساب أدمن، أو اضبط VITE_ADMIN_EMAIL و VITE_ADMIN_PASSWORD في Vercel.",
-            "Admin sign-in failed. Log in as an admin account, or set VITE_ADMIN_EMAIL / VITE_ADMIN_PASSWORD in Vercel.",
+            "فشل الدخول. سجّل بحساب أدمن أو مدرب، أو اضبط VITE_ADMIN_EMAIL و VITE_ADMIN_PASSWORD في Vercel.",
+            "Sign-in failed. Log in as admin or coach, or set VITE_ADMIN_EMAIL / VITE_ADMIN_PASSWORD in Vercel.",
           ),
         );
         setLive(false);
@@ -140,7 +169,11 @@ export function Notifications() {
       return;
     }
 
-    await ensureAdminAuth();
+    const ok = await ensureStaffOrSession();
+    if (!ok) {
+      setAuthError(t("فشل التحقق من صلاحية الموظف.", "Staff authorization failed."));
+      return;
+    }
 
     if (sendMode === "user") {
       if (!targetUserId) return;
@@ -159,12 +192,16 @@ export function Notifications() {
         return;
       }
     } else {
-      await db.from("admin_notifications").insert({
+      const { error } = await db.from("admin_notifications").insert({
         title: title.trim(),
         body: body.trim(),
         read: false,
         type: "manual",
       });
+      if (error) {
+        setAuthError(error.message);
+        return;
+      }
     }
     setTitle("");
     setBody("");
@@ -176,8 +213,10 @@ export function Notifications() {
       setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)));
       return;
     }
-    await ensureAdminAuth();
-    await db.from("admin_notifications").update({ read: true }).eq("id", item.id);
+    const ok = await ensureStaffOrSession();
+    if (!ok) return;
+    const { error } = await db.from("admin_notifications").update({ read: true }).eq("id", item.id);
+    if (error) setAuthError(error.message);
   };
 
   return (
