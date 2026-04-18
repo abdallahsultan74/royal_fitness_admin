@@ -12,36 +12,55 @@ export const db: any = hasFirebaseConfig
 const adminEmail = import.meta.env.VITE_ADMIN_EMAIL as string | undefined;
 const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD as string | undefined;
 
+let staffAuthPromise: Promise<boolean> | null = null;
 let adminAuthPromise: Promise<boolean> | null = null;
 
-export function ensureAdminAuth(): Promise<boolean> {
-  if (adminAuthPromise) return adminAuthPromise;
+async function rpcBoolean(name: string): Promise<boolean> {
+  if (!db) return false;
+  try {
+    const resp = await db.rpc(name);
+    if (resp?.error) return false;
+    const data = resp?.data;
+    if (typeof data === "boolean") return data;
+    if (Array.isArray(data)) {
+      const first = data[0];
+      if (typeof first === "boolean") return first;
+      return false;
+    }
+    if (data && typeof data === "object" && name in (data as any)) {
+      return Boolean((data as any)[name]);
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 
-  adminAuthPromise = (async () => {
+/** Current session is admin (profiles.role / JWT / legacy rules). */
+export async function getIsAdmin(): Promise<boolean> {
+  return rpcBoolean("is_admin");
+}
+
+/** Current session is coach. */
+export async function getIsCoach(): Promise<boolean> {
+  return rpcBoolean("is_coach");
+}
+
+/** Admin or coach — can use the staff panel. */
+export async function getIsStaff(): Promise<boolean> {
+  if (await getIsAdmin()) return true;
+  return getIsCoach();
+}
+
+/**
+ * Allow coaches + admins to use the panel. If a normal member session exists, fall back to env admin login (Vercel).
+ * Does not replace an active coach session (coach stays logged in).
+ */
+export function ensureStaffAuth(): Promise<boolean> {
+  if (staffAuthPromise) return staffAuthPromise;
+
+  staffAuthPromise = (async () => {
     if (!db || !hasFirebaseConfig) return false;
-
-    const isAdminForCurrentSession = async (): Promise<boolean> => {
-      try {
-        const resp = await db.rpc("is_admin");
-        if (resp?.error) return false;
-        const data = resp?.data;
-        if (typeof data === "boolean") return data;
-        if (Array.isArray(data)) {
-          const first = data[0];
-          if (typeof first === "boolean") return first;
-          if (first && typeof first === "object" && "is_admin" in (first as any)) {
-            return Boolean((first as any).is_admin);
-          }
-          return false;
-        }
-        if (data && typeof data === "object" && "is_admin" in (data as any)) {
-          return Boolean((data as any).is_admin);
-        }
-        return false;
-      } catch {
-        return false;
-      }
-    };
 
     const tryEnvSignIn = async (): Promise<boolean> => {
       if (!adminEmail || !adminPassword) return false;
@@ -56,21 +75,61 @@ export function ensureAdminAuth(): Promise<boolean> {
           password: adminPassword,
         });
         if (result.error) return false;
-        return isAdminForCurrentSession();
+        return getIsStaff();
       } catch {
         return false;
       }
     };
 
-    // 1) If we already have a session, validate admin; if not admin but env creds exist, switch to env admin (Vercel / shared browser).
     const current = await db.auth.getSession();
     if (current.data.session?.user) {
-      const ok = await isAdminForCurrentSession();
-      if (ok) return true;
+      if (await getIsStaff()) return true;
       return tryEnvSignIn();
     }
 
-    // 2) No session: sign in with admin credentials from env (Vercel)
+    return tryEnvSignIn();
+  })().finally(() => {
+    staffAuthPromise = null;
+  });
+
+  return staffAuthPromise;
+}
+
+/**
+ * Strict admin only (create staff, etc.). Coach session returns false unless env admin login succeeds.
+ */
+export function ensureAdminAuth(): Promise<boolean> {
+  if (adminAuthPromise) return adminAuthPromise;
+
+  adminAuthPromise = (async () => {
+    if (!db || !hasFirebaseConfig) return false;
+
+    const tryEnvSignIn = async (): Promise<boolean> => {
+      if (!adminEmail || !adminPassword) return false;
+      try {
+        await db.auth.signOut();
+      } catch {
+        /* ignore */
+      }
+      try {
+        const result = await db.auth.signInWithPassword({
+          email: adminEmail,
+          password: adminPassword,
+        });
+        if (result.error) return false;
+        return getIsAdmin();
+      } catch {
+        return false;
+      }
+    };
+
+    const current = await db.auth.getSession();
+    if (current.data.session?.user) {
+      if (await getIsAdmin()) return true;
+      // Coach (or member): only env bot can become admin; do not treat coach as admin.
+      return tryEnvSignIn();
+    }
+
     return tryEnvSignIn();
   })().finally(() => {
     adminAuthPromise = null;
