@@ -160,8 +160,21 @@ export function UserManagement() {
   ];
 
   const headers = lang === "ar"
-    ? ["الصورة", "الاسم", "البريد الإلكتروني", "الخطة", "الوزن", "BMI", "التحدي", "آخر نشاط", "الحالة", "الإجراءات"]
-    : ["Profile", "Name", "Email", "Plan", "Weight", "BMI", "Challenge", "Last Active", "Status", "Actions"];
+    ? ["الصورة", "الاسم", "الدور", "البريد الإلكتروني", "الخطة", "الوزن", "BMI", "التحدي", "آخر نشاط", "الحالة", "الإجراءات"]
+    : ["Profile", "Name", "Role", "Email", "Plan", "Weight", "BMI", "Challenge", "Last Active", "Status", "Actions"];
+
+  const roleLabel = (roleRaw: string) => {
+    const r = (roleRaw ?? "user").toString().trim().toLowerCase();
+    if (r === "admin") return t("أدمن", "Admin");
+    if (r === "coach") return t("مدرب", "Coach");
+    return t("مستخدم", "User");
+  };
+  const roleStyle = (roleRaw: string) => {
+    const r = (roleRaw ?? "user").toString().trim().toLowerCase();
+    if (r === "admin") return "bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/25";
+    if (r === "coach") return "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20";
+    return "bg-secondary text-muted-foreground border border-border";
+  };
 
   const handleSendEmail = (email: string) => {
     if (typeof window === "undefined") return;
@@ -414,6 +427,11 @@ export function UserManagement() {
                   </div>
                 </td>
                 <td className="px-4 py-3 text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 500 }}>{u.name}</td>
+                <td className="px-4 py-3">
+                  <span className={`px-2.5 py-1 rounded-full ${roleStyle(u.role)}`} style={{ fontSize: 11, fontWeight: 600 }}>
+                    {roleLabel(u.role)}
+                  </span>
+                </td>
                 <td className="px-4 py-3 text-muted-foreground" dir="ltr" style={{ fontSize: 13, textAlign: "start" }}>{u.email}</td>
                 <td className="px-4 py-3">
                   <span className={`px-2.5 py-1 rounded-full ${planStyles[u.plan] || "bg-secondary text-muted-foreground border border-border"}`} style={{ fontSize: 11 }}>
