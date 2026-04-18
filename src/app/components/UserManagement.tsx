@@ -339,30 +339,40 @@ export function UserManagement() {
                   try {
                     const authed = await ensureAdminAuth();
                     if (!authed) throw new Error(t("لا يوجد صلاحية أدمن.", "Not authorized as admin."));
-                    const res = await db.functions.invoke("create-staff-user", {
-                      body: {
+                    const sessionResp = await db.auth.getSession();
+                    const token = sessionResp.data.session?.access_token;
+                    if (!token) throw new Error(t("جلسة الدخول غير صالحة.", "Invalid session."));
+
+                    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+                    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+                    if (!supabaseUrl || !supabaseAnonKey) throw new Error("Missing Supabase env");
+
+                    const resp = await fetch(`${supabaseUrl}/functions/v1/create-staff-user`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                        apikey: supabaseAnonKey,
+                      },
+                      body: JSON.stringify({
                         email: staffEmail,
                         password: staffPassword,
                         name: staffName,
                         role: staffRole,
-                      },
+                      }),
                     });
-                    if (res.error) {
-                      let detail = String(res.error.message ?? res.error);
-                      const anyErr = res.error as any;
-                      const resp: Response | undefined =
-                        anyErr?.context?.response ??
-                        (typeof anyErr?.context?.json === "function" ? anyErr.context : undefined);
-                      if (resp && typeof (resp as any).json === "function") {
-                        try {
-                          const j = (await (resp as any).json()) as { error?: string; details?: unknown };
-                          if (j?.error) detail = `${detail}: ${j.error}`;
-                          if (j?.details) detail = `${detail} (${JSON.stringify(j.details)})`;
-                        } catch {
-                          /* ignore */
-                        }
+
+                    const text = await resp.text();
+                    if (!resp.ok) {
+                      let reason = text;
+                      try {
+                        const j = JSON.parse(text) as { error?: string; details?: unknown };
+                        reason = j?.error ? j.error : text;
+                        if (j?.details) reason = `${reason} (${JSON.stringify(j.details)})`;
+                      } catch {
+                        /* ignore */
                       }
-                      throw new Error(detail);
+                      throw new Error(`${t("فشل إنشاء الحساب", "Create failed")}: ${resp.status} ${reason}`);
                     }
                     setStaffOpen(false);
                   } catch (e: any) {
