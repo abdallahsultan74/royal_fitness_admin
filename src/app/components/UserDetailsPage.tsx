@@ -62,6 +62,23 @@ function formatCreatedAtLabel(raw: string | null | undefined, locale: string) {
   return fmt.format(-days, "day");
 }
 
+function normalizeWhatsappToE164Digits(raw: string) {
+  const cleaned = raw.trim().replace(/[^\d+]/g, "");
+  if (!cleaned) return "";
+  let digits = cleaned.replace(/^\+/, "");
+
+  // Heuristic for local Egyptian mobile numbers like 01xxxxxxxxx -> 201xxxxxxxxx
+  if (digits.startsWith("0") && digits.length === 11 && digits.startsWith("01")) {
+    digits = `20${digits.slice(1)}`;
+  }
+
+  // If user typed 0020... -> 20...
+  if (digits.startsWith("00")) digits = digits.slice(2);
+
+  // wa.me requires digits only (no +)
+  return digits.replace(/\D/g, "");
+}
+
 export function UserDetailsPage() {
   const { t, isRTL, lang } = useLang();
   const nav = useNavigate();
@@ -155,9 +172,9 @@ export function UserDetailsPage() {
   const handleWhatsApp = () => {
     const raw = (profile?.whatsapp_phone ?? whatsDraft)?.toString().trim();
     if (!raw || typeof window === "undefined") return;
-    const digits = raw.replace(/[^\d+]/g, "");
+    const digits = normalizeWhatsappToE164Digits(raw);
     if (!digits) return;
-    window.open(`https://wa.me/${digits.replace(/^\+/, "")}`, "_blank", "noopener,noreferrer");
+    window.open(`https://wa.me/${digits}`, "_blank", "noopener,noreferrer");
   };
 
   const saveProfileBasics = async () => {
