@@ -54,7 +54,14 @@ export function Subscriptions() {
         // Important: supabase-js does not always throw on permission errors.
         if (resp.error) {
           console.error("[Subscriptions] loadRequests error", resp.error);
-          setAuthError(resp.error.message);
+          // Common case: DB migrations not applied yet (request_kind/duration_days missing).
+          if (String(resp.error.message || "").toLowerCase().includes("request_kind")) {
+            setAuthError(
+              "Database migrations are missing: run the latest subscription_requests migration (adds request_kind, duration_days, plan_expires_at) on Supabase, then redeploy.",
+            );
+          } else {
+            setAuthError(resp.error.message);
+          }
           setSubscriptions([]);
           setLive(false);
           return;
