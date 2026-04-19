@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Search, Bell, Globe, ChevronDown, Menu } from "lucide-react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { useLang } from "./LanguageContext";
 import { useAdminAuth } from "./AuthContext";
 
@@ -11,6 +12,16 @@ export function Header({ onMenuClick }: HeaderProps) {
   const { lang, toggle, t } = useLang();
   const { user, logout } = useAdminAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [headerQuery, setHeaderQuery] = useState("");
+
+  const submitGlobalSearch = () => {
+    const q = headerQuery.trim();
+    if (!q) return;
+    const onExercises = location.pathname.includes("/exercises");
+    const base = onExercises ? "/exercises" : "/users";
+    navigate(`${base}?q=${encodeURIComponent(q)}`);
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -77,15 +88,30 @@ export function Header({ onMenuClick }: HeaderProps) {
       </div>
 
       {/* Search: full width on narrow screens */}
-      <div className="relative w-full min-w-0 basis-full sm:basis-auto sm:max-w-md lg:max-w-md">
+      <form
+        className="relative w-full min-w-0 basis-full sm:basis-auto sm:max-w-md lg:max-w-md"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitGlobalSearch();
+        }}
+      >
         <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
-          type="text"
+          type="search"
+          value={headerQuery}
+          onChange={(e) => setHeaderQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submitGlobalSearch();
+            }
+          }}
           placeholder={t("ابحث عن مستخدمين، تمارين، تقارير...", "Search users, exercises, reports...")}
           className="w-full rounded-lg border border-border bg-secondary py-2 ps-10 pe-4 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
           style={{ fontSize: 13 }}
+          aria-label={t("بحث في المشروع", "Project search")}
         />
-      </div>
+      </form>
     </header>
   );
 }

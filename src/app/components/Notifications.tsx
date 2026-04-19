@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
 
@@ -59,6 +60,7 @@ export function Notifications() {
   const [targetUserId, setTargetUserId] = useState<string>("");
   const [roleFilter, setRoleFilter] = useState<"all" | "user" | "coach" | "admin">("all");
   const [activeTab, setActiveTab] = useState<"admin" | "inbox">("admin");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const canUseSessionEvenIfStaffCheckFails = async () => {
     if (!db || !hasFirebaseConfig) return false;
@@ -304,6 +306,42 @@ export function Notifications() {
     if (error) setAuthError(error.message);
   };
 
+  const deleteAdminNotification = async (item: NotificationItem) => {
+    if (!window.confirm(t("حذف هذا الإشعار نهائياً؟", "Permanently delete this notification?"))) return;
+    if (!live || !db || !hasFirebaseConfig || typeof item.id !== "string") {
+      setItems((prev) => prev.filter((n) => n.id !== item.id));
+      return;
+    }
+    setPendingDeleteId(item.id);
+    try {
+      const ok = await ensureStaffOrSession();
+      if (!ok) return;
+      const { error } = await db.from("admin_notifications").delete().eq("id", item.id);
+      if (error) setAuthError(error.message);
+      else setItems((prev) => prev.filter((n) => n.id !== item.id));
+    } finally {
+      setPendingDeleteId(null);
+    }
+  };
+
+  const deleteUserMessage = async (item: UserMessageItem) => {
+    if (!window.confirm(t("حذف هذه الرسالة نهائياً؟", "Permanently delete this message?"))) return;
+    if (!live || !db || !hasFirebaseConfig) {
+      setUserMessages((prev) => prev.filter((m) => m.id !== item.id));
+      return;
+    }
+    setPendingDeleteId(item.id);
+    try {
+      const ok = await ensureStaffOrSession();
+      if (!ok) return;
+      const { error } = await db.from("user_notifications").delete().eq("id", item.id);
+      if (error) setAuthError(error.message);
+      else setUserMessages((prev) => prev.filter((m) => m.id !== item.id));
+    } finally {
+      setPendingDeleteId(null);
+    }
+  };
+
   return (
     <div className="min-w-0 max-w-full space-y-4 p-4 sm:space-y-6 sm:p-6">
       <div className="min-w-0">
@@ -371,17 +409,30 @@ export function Notifications() {
                       {new Date(m.createdAt).toLocaleString(lang === "ar" ? "ar-EG" : "en-US")}
                     </p>
                   </div>
-                  {!m.readAt ? (
+                  <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                    {!m.readAt ? (
+                      <button
+                        type="button"
+                        onClick={() => markUserMessageRead(m)}
+                        disabled={pendingDeleteId === m.id}
+                        className="w-full rounded-md border border-border px-3 py-1.5 text-muted-foreground hover:text-[#D4AF37] sm:w-auto disabled:opacity-50"
+                      >
+                        {t("تحديد كمقروء", "Mark as read")}
+                      </button>
+                    ) : (
+                      <span className="text-emerald-400 text-xs sm:text-[12px]">{t("مقروء", "Read")}</span>
+                    )}
                     <button
                       type="button"
-                      onClick={() => markUserMessageRead(m)}
-                      className="w-full shrink-0 rounded-md border border-border px-3 py-1.5 text-muted-foreground hover:text-[#D4AF37] sm:w-auto"
+                      onClick={() => deleteUserMessage(m)}
+                      disabled={pendingDeleteId === m.id}
+                      className="inline-flex w-full items-center justify-center gap-1 rounded-md border border-red-500/30 px-2 py-1.5 text-red-400 hover:bg-red-500/10 sm:w-auto disabled:opacity-50"
+                      style={{ fontSize: 12 }}
                     >
-                      {t("تحديد كمقروء", "Mark as read")}
+                      <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      {t("حذف", "Delete")}
                     </button>
-                  ) : (
-                    <span className="text-emerald-400 text-xs sm:text-[12px]">{t("مقروء", "Read")}</span>
-                  )}
+                  </div>
                 </div>
                 <p className="mt-2 break-words text-muted-foreground text-sm sm:text-[13px]">{m.body}</p>
               </div>
@@ -493,17 +544,30 @@ export function Notifications() {
                   {new Date(item.createdAt).toLocaleString(lang === "ar" ? "ar-EG" : "en-US")}
                 </p>
               </div>
-              {!item.read ? (
+              <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                {!item.read ? (
+                  <button
+                    type="button"
+                    onClick={() => markRead(item)}
+                    disabled={pendingDeleteId === item.id}
+                    className="w-full rounded-md border border-border px-3 py-1.5 text-muted-foreground hover:text-[#D4AF37] sm:w-auto disabled:opacity-50"
+                  >
+                    {t("تحديد كمقروء", "Mark as read")}
+                  </button>
+                ) : (
+                  <span className="text-emerald-400 text-xs sm:text-[12px]">{t("مقروء", "Read")}</span>
+                )}
                 <button
                   type="button"
-                  onClick={() => markRead(item)}
-                  className="w-full shrink-0 rounded-md border border-border px-3 py-1.5 text-muted-foreground hover:text-[#D4AF37] sm:w-auto"
+                  onClick={() => deleteAdminNotification(item)}
+                  disabled={pendingDeleteId === item.id}
+                  className="inline-flex w-full items-center justify-center gap-1 rounded-md border border-red-500/30 px-2 py-1.5 text-red-400 hover:bg-red-500/10 sm:w-auto disabled:opacity-50"
+                  style={{ fontSize: 12 }}
                 >
-                  {t("تحديد كمقروء", "Mark as read")}
+                  <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  {t("حذف", "Delete")}
                 </button>
-              ) : (
-                <span className="text-emerald-400 text-xs sm:text-[12px]">{t("مقروء", "Read")}</span>
-              )}
+              </div>
             </div>
             <p className="mt-2 break-words text-muted-foreground text-sm sm:text-[13px]">{item.body}</p>
           </div>

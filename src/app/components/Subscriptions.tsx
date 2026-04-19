@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, hasFirebaseConfig, isLocalAuthMode } from "../firebase";
 
@@ -31,6 +32,7 @@ export function Subscriptions() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [debugPendingCount, setDebugPendingCount] = useState<number | null>(null);
   const [debugPendingJoinCount, setDebugPendingJoinCount] = useState<number | null>(null);
+  const loadRequestsRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     if (!db || !hasFirebaseConfig) {
@@ -105,8 +107,10 @@ export function Subscriptions() {
           };
         });
 
-        setSubscriptions(mapped);
-        setLive(true);
+        if (!cancelled) {
+          setSubscriptions(mapped);
+          setLive(true);
+        }
       } catch (e) {
         console.error("[Subscriptions] loadRequests catch", e);
         setAuthError((e as Error)?.message ?? "Failed to load subscription requests.");
@@ -114,6 +118,8 @@ export function Subscriptions() {
         setLive(false);
       }
     };
+
+    loadRequestsRef.current = loadRequests;
 
     ensureStaffAuth().then(async (authed) => {
       if (!authed || cancelled) {
@@ -205,6 +211,7 @@ export function Subscriptions() {
 
     return () => {
       cancelled = true;
+      loadRequestsRef.current = null;
       if (channel) db.removeChannel(channel);
     };
   }, [localizedFallback, t]);
@@ -307,6 +314,26 @@ export function Subscriptions() {
     }
   };
 
+  const deleteRequest = async (item: Subscription) => {
+    if (!window.confirm(t("حذف هذا الطلب نهائياً من القائمة؟", "Permanently delete this request from the list?"))) return;
+    if (!live || !db || !hasFirebaseConfig || typeof item.id !== "string") {
+      setSubscriptions((prev) => prev.filter((s) => s.id !== item.id));
+      return;
+    }
+    try {
+      setPendingId(item.id);
+      await ensureStaffAuth();
+      const { error } = await db.from("subscription_requests").delete().eq("id", item.id);
+      if (error) {
+        window.alert(error.message);
+      } else {
+        await loadRequestsRef.current?.();
+      }
+    } finally {
+      setPendingId(null);
+    }
+  };
+
   return (
     <div className="min-w-0 max-w-full space-y-4 p-4 sm:space-y-6 sm:p-6">
       <div className="min-w-0">
@@ -354,7 +381,7 @@ export function Subscriptions() {
           <table className="w-full min-w-[640px]">
           <thead>
             <tr className="border-b border-border">
-              {[t("المستخدم", "User"), t("الخطة", "Plan"), t("الحالة", "Status"), t("المبلغ", "Amount"), t("التجديد", "Renew"), t("إجراء", "Action")].map((h) => (
+              {[t("المستخدم", "User"), t("الخطة", "Plan"), t("الحالة", "Status"), t("المبلغ", "Amount"), t("التجديد", "Renew"), t("إجراءات", "Actions")].map((h) => (
                 <th key={h} className="px-4 py-3 text-start text-muted-foreground" style={{ fontSize: 12, fontWeight: 500 }}>{h}</th>
               ))}
             </tr>
@@ -377,14 +404,28 @@ export function Subscriptions() {
                   {new Date(s.renewDate).toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US")}
                 </td>
                 <td className="px-4 py-3">
-                  <button
-                    onClick={() => toggleStatus(s)}
-                    disabled={pendingId === s.id}
-                    className="px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-[#D4AF37] hover:border-[#D4AF37]/30 disabled:opacity-50"
-                    style={{ fontSize: 12 }}
-                  >
-                    {s.status === "approved" ? t("رفض", "Reject") : t("تفعيل", "Approve")}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleStatus(s)}
+                      disabled={pendingId === s.id}
+                      className="px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-[#D4AF37] hover:border-[#D4AF37]/30 disabled:opacity-50"
+                      style={{ fontSize: 12 }}
+                    >
+                      {s.status === "approved" ? t("رفض", "Reject") : t("تفعيل", "Approve")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteRequest(s)}
+                      disabled={pendingId === s.id}
+                      className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1.5 text-red-400 hover:border-red-500/40 hover:bg-red-500/10 disabled:opacity-50"
+                      style={{ fontSize: 12 }}
+                      title={t("حذف الطلب", "Delete request")}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                      {t("حذف", "Delete")}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

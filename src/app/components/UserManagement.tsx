@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, MoreHorizontal, Shield, ShieldOff, Mail, Eye, UserPlus } from "lucide-react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, getIsAdmin, hasFirebaseConfig } from "../firebase";
+import { normalizePlanKey, textMatchesQuery } from "../searchUtils";
 
 const usersFallback = {
   ar: [
@@ -31,11 +32,15 @@ const usersFallback = {
   ],
 };
 
+type RoleTab = "all" | "user" | "coach" | "admin";
+
 export function UserManagement() {
   const { lang, t } = useLang();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [users, setUsers] = useState(usersFallback[lang]);
   const [search, setSearch] = useState("");
+  const [roleTab, setRoleTab] = useState<RoleTab>("all");
   const [live, setLive] = useState(false);
   const [pendingId, setPendingId] = useState<string | number | null>(null);
   const [staffOpen, setStaffOpen] = useState(false);
@@ -75,18 +80,19 @@ export function UserManagement() {
           .map((part) => part[0])
           .join("")
           .toUpperCase();
-        const createdAtRaw = data.created_at?.toString();
-        const createdAt = createdAtRaw ? new Date(createdAtRaw) : undefined;
-        const lastActive = createdAt
-          ? new Intl.RelativeTimeFormat(lang === "ar" ? "ar" : "en", {
-              numeric: "auto",
-            }).format(
-              -Math.max(1, Math.round((Date.now() - createdAt.getTime()) / (1000 * 60))),
-              "minute",
-            )
-          : lang === "ar"
-            ? "الآن"
-            : "Just now";
+        const lastLogRaw = data.last_weight_log_at?.toString();
+        const lastAt = lastLogRaw ? new Date(lastLogRaw) : null;
+        const lastActive =
+          lastAt && !Number.isNaN(lastAt.getTime())
+            ? new Intl.RelativeTimeFormat(lang === "ar" ? "ar" : "en", {
+                numeric: "auto",
+              }).format(
+                -Math.max(1, Math.round((Date.now() - lastAt.getTime()) / (1000 * 60))),
+                "minute",
+              )
+            : lang === "ar"
+              ? "الآن"
+              : "Just now";
 
         return {
           id: data.user_id,
@@ -132,8 +138,11 @@ export function UserManagement() {
     };
   }, [lang]);
 
-  const planPro = t("بريميوم", "Pro");
-  const planTrial = t("تجريبي", "Trial");
+  useEffect(() => {
+    const q = searchParams.get("q") ?? "";
+    setSearch((prev) => (q !== prev ? q : prev));
+  }, [searchParams]);
+
   const statusActive = t("نشط", "Active");
   const statusOffline = t("غير متصل", "Offline");
   const normalizeStatus = (status: string) => status.trim().toLowerCase();
@@ -146,19 +155,61 @@ export function UserManagement() {
     return statusOffline;
   };
 
-  const filtered = useMemo(() => users.filter(
-    (u) => !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
-  ), [search, users]);
-
-  const planStyles: Record<string, string> = {
-    [planPro]: "bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20",
-    [planTrial]: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+  const roleLabel = (roleRaw: string) => {
+    const r = (roleRaw ?? "user").toString().trim().toLowerCase();
+    if (r === "admin") return t("أدمن", "Admin");
+    if (r === "coach") return t("مدرب", "Coach");
+    return t("مستخدم", "User");
   };
 
+  const formatPlanCell = (planRaw: string) => {
+    const k = normalizePlanKey(planRaw);
+    if (k === "pro") return t("بريميوم", "Pro");
+    if (k === "trial") return t("تجريبي", "Trial");
+    if (k === "basic") return t("أساسي", "Basic");
+    return planRaw || "—";
+  };
+
+  const planBadgeClass = (planRaw: string) => {
+    const k = normalizePlanKey(planRaw);
+    if (k === "pro") return "bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20";
+    if (k === "trial") return "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+    if (k === "basic") return "bg-sky-500/10 text-sky-300 border border-sky-500/20";
+    return "bg-secondary text-muted-foreground border border-border";
+  };
+
+  const filtered = useMemo(() => {
+    const q = search;
+    return users.filter((u) => {
+      const r = (u.role ?? "user").toString().trim().toLowerCase();
+      if (roleTab !== "all") {
+        if (roleTab === "user" && r !== "user") return false;
+        if (roleTab === "coach" && r !== "coach") return false;
+        if (roleTab === "admin" && r !== "admin") return false;
+      }
+      if (!q.trim()) return true;
+      const hay = [
+        u.name,
+        u.email,
+        u.role,
+        roleLabel(u.role),
+        u.plan,
+        formatPlanCell(String(u.plan)),
+        u.challenge ? String(u.challenge) : "",
+        String(u.weight ?? ""),
+        String(u.bmi ?? ""),
+      ].join(" ");
+      return textMatchesQuery(hay, q);
+    });
+  }, [users, search, roleTab, t]);
+
   const stats = [
-    { label: t("إجمالي المستخدمين", "Total Users"), value: users.length, color: "text-[#F5EAD4]" },
-    { label: t("أعضاء بريميوم", "Pro Members"), value: users.filter((u) => u.plan === planPro).length, color: "text-[#D4AF37]" },
-    { label: t("فترة تجريبية", "On Trial"), value: users.filter((u) => u.plan === planTrial).length, color: "text-emerald-400" },
+    { label: t("إجمالي السجلات", "Total rows"), value: users.length, color: "text-[#F5EAD4]" },
+    { label: t("مستخدمون", "Members"), value: users.filter((u) => (u.role ?? "user").toString().toLowerCase() === "user").length, color: "text-muted-foreground" },
+    { label: t("مدربون", "Coaches"), value: users.filter((u) => (u.role ?? "").toString().toLowerCase() === "coach").length, color: "text-emerald-400" },
+    { label: t("أدمن", "Admins"), value: users.filter((u) => (u.role ?? "").toString().toLowerCase() === "admin").length, color: "text-[#D4AF37]" },
+    { label: t("بريميوم", "Pro plans"), value: users.filter((u) => normalizePlanKey(u.plan) === "pro").length, color: "text-[#D4AF37]" },
+    { label: t("تجريبي", "Trial plans"), value: users.filter((u) => normalizePlanKey(u.plan) === "trial").length, color: "text-emerald-400" },
     { label: t("غير متصلين", "Offline"), value: users.filter((u) => !isActiveStatus(u.status)).length, color: "text-slate-300" },
   ];
 
@@ -166,12 +217,6 @@ export function UserManagement() {
     ? ["الصورة", "الاسم", "الدور", "البريد الإلكتروني", "الخطة", "الوزن", "BMI", "التحدي", "آخر نشاط", "الحالة", "الإجراءات"]
     : ["Profile", "Name", "Role", "Email", "Plan", "Weight", "BMI", "Challenge", "Last Active", "Status", "Actions"];
 
-  const roleLabel = (roleRaw: string) => {
-    const r = (roleRaw ?? "user").toString().trim().toLowerCase();
-    if (r === "admin") return t("أدمن", "Admin");
-    if (r === "coach") return t("مدرب", "Coach");
-    return t("مستخدم", "User");
-  };
   const roleStyle = (roleRaw: string) => {
     const r = (roleRaw ?? "user").toString().trim().toLowerCase();
     if (r === "admin") return "bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/25";
@@ -220,12 +265,35 @@ export function UserManagement() {
       </div>
 
       {/* Quick stats */}
-      <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-7">
         {stats.map((s) => (
           <div key={s.label} className="min-w-0 rounded-xl border border-border bg-card p-3 sm:p-4">
             <p className="text-muted-foreground text-xs sm:text-[12px]">{s.label}</p>
             <p className={`${s.color} text-xl font-semibold sm:text-2xl`}>{s.value}</p>
           </div>
+        ))}
+      </div>
+
+      {/* Role categories */}
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            ["all", t("الكل", "All")] as const,
+            ["user", t("مستخدمون", "Users")] as const,
+            ["coach", t("مدربون", "Coaches")] as const,
+            ["admin", t("أدمن", "Admins")] as const,
+          ] satisfies readonly [RoleTab, string][]
+        ).map(([key, lab]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setRoleTab(key)}
+            className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+              roleTab === key ? "border-[#D4AF37]/50 bg-[#D4AF37]/15 text-[#F5EAD4]" : "border-border text-muted-foreground hover:border-[#D4AF37]/30"
+            }`}
+          >
+            {lab}
+          </button>
         ))}
       </div>
 
@@ -235,9 +303,16 @@ export function UserManagement() {
           <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder={t("ابحث بالاسم أو البريد الإلكتروني...", "Search by name or email...")}
+            placeholder={t("ابحث بالاسم أو البريد أو الخطة أو التحدي (عربي/إنجليزي)...", "Search name, email, plan, challenge (AR/EN)...")}
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setSearch(v);
+              const next = new URLSearchParams(searchParams);
+              if (v.trim()) next.set("q", v);
+              else next.delete("q");
+              setSearchParams(next, { replace: true });
+            }}
             className="w-full ps-10 pe-4 py-2.5 rounded-lg bg-card border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
             style={{ fontSize: 13 }}
           />
@@ -439,8 +514,8 @@ export function UserManagement() {
                 </td>
                 <td className="px-4 py-3 text-muted-foreground" dir="ltr" style={{ fontSize: 13, textAlign: "start" }}>{u.email}</td>
                 <td className="px-4 py-3">
-                  <span className={`px-2.5 py-1 rounded-full ${planStyles[u.plan] || "bg-secondary text-muted-foreground border border-border"}`} style={{ fontSize: 11 }}>
-                    {u.plan}
+                  <span className={`px-2.5 py-1 rounded-full ${planBadgeClass(String(u.plan))}`} style={{ fontSize: 11 }}>
+                    {formatPlanCell(String(u.plan))}
                   </span>
                 </td>
                 <td className="px-4 py-3">

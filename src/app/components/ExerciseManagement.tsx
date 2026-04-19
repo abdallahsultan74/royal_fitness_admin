@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Plus, Edit3, Trash2, Eye, ChevronDown, Filter, Upload, Mic, Square, Play, Pause, Trash } from "lucide-react";
+import { useSearchParams } from "react-router";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
+import { bilingualOptionMatches, normalizeForSearch, textMatchesQuery } from "../searchUtils";
 
 const exercisesFallback = {
   ar: [
@@ -51,13 +53,100 @@ const filtersData = {
   },
 };
 
+function normalizeLevelKey(raw: string): string {
+  const s = normalizeForSearch(raw).toLowerCase();
+  if (s.includes("begin") || s.includes("مبتدئ")) return "beginner";
+  if (s.includes("inter") || s.includes("متوسط")) return "intermediate";
+  if (s.includes("advanc") || s.includes("متقدم")) return "advanced";
+  return s;
+}
+
+function localizeDifficulty(levelRaw: string, lang: "ar" | "en"): string {
+  const k = normalizeLevelKey(levelRaw);
+  if (lang === "ar") {
+    if (k === "beginner") return "مبتدئ";
+    if (k === "intermediate") return "متوسط";
+    if (k === "advanced") return "متقدم";
+  } else {
+    if (k === "beginner") return "Beginner";
+    if (k === "intermediate") return "Intermediate";
+    if (k === "advanced") return "Advanced";
+  }
+  return normalizeForSearch(levelRaw);
+}
+
+function exerciseSourceBucket(raw: string): "manual" | "rapidapi" | "other" {
+  const s = normalizeForSearch(raw).toLowerCase();
+  if (s.includes("rapid")) return "rapidapi";
+  if (s.includes("manual") || s.includes("يدوي") || s.includes("app") || s.includes("admin")) return "manual";
+  return "other";
+}
+
+function sourceFilterMatches(
+  dbRaw: string,
+  selected: string,
+  allLabel: string,
+  arSource: string[],
+  enSource: string[],
+): boolean {
+  if (selected === allLabel) return true;
+  const bucket = exerciseSourceBucket(dbRaw);
+  const manualAr = arSource[1];
+  const manualEn = enSource[1];
+  const rapidAr = arSource[2];
+  const rapidEn = enSource[2];
+  if (selected === manualAr || selected === manualEn) return bucket === "manual";
+  if (selected === rapidAr || selected === rapidEn) return bucket === "rapidapi";
+  return textMatchesQuery(dbRaw, selected);
+}
+
+function displaySource(raw: string, lang: "ar" | "en"): string {
+  if (exerciseSourceBucket(raw) === "rapidapi") return "RapidAPI";
+  if (lang === "ar") return "يدوي";
+  return "Manual";
+}
+
+function creatorFilterMatches(
+  createdBy: string | undefined,
+  selected: string,
+  allLabel: string,
+  arCreator: string[],
+  enCreator: string[],
+): boolean {
+  if (selected === allLabel) return true;
+  const cb = (createdBy ?? "app").toLowerCase();
+  const trainerAr = arCreator[1];
+  const trainerEn = enCreator[1];
+  const appAr = arCreator[2];
+  const appEn = enCreator[2];
+  if (selected === trainerAr || selected === trainerEn) return cb === "trainer" || cb === "admin";
+  if (selected === appAr || selected === appEn) return cb === "app";
+  return true;
+}
+
+function storagePathsFromExerciseMediaPublicUrls(urls: (string | undefined)[]): string[] {
+  const out: string[] = [];
+  for (const u of urls) {
+    if (!u) continue;
+    const match = u.match(/\/exercise-media\/(.+?)(?:\?|#|$)/i);
+    if (match?.[1]) out.push(match[1]);
+  }
+  return out;
+}
+
 type ExerciseItem = {
   id: string | number;
   name: string;
+  nameEn: string;
+  nameAr: string;
   target: string;
+  targetRaw: string;
   difficulty: string;
+  levelRaw: string;
   equipment: string;
+  equipmentRaw: string;
   source: string;
+  sourceRaw: string;
   gif: string;
   gifUrl?: string;
   mediaType?: "image" | "video";
@@ -66,6 +155,37 @@ type ExerciseItem = {
   ttsScriptAr?: string;
   createdBy?: "app" | "trainer" | "admin";
 };
+
+function buildFallback(lang: "ar" | "en"): ExerciseItem[] {
+  const rows = exercisesFallback[lang];
+  return rows.map((row, idx) => {
+    const en = exercisesFallback.en[idx]!;
+    const ar = exercisesFallback.ar[idx]!;
+    const levelRaw = normalizeLevelKey(
+      lang === "ar"
+        ? (row.difficulty === "مبتدئ" ? "beginner" : row.difficulty === "متوسط" ? "intermediate" : "advanced")
+        : row.difficulty,
+    );
+    const sourceRaw = row.source === "RapidAPI" || en.source === "RapidAPI" ? "RapidAPI" : "Manual";
+    return {
+      id: row.id,
+      name: row.name,
+      nameEn: en.name,
+      nameAr: ar.name,
+      target: row.target,
+      targetRaw: en.target,
+      equipment: row.equipment,
+      equipmentRaw: en.equipment,
+      levelRaw,
+      difficulty: localizeDifficulty(levelRaw, lang),
+      source: displaySource(sourceRaw, lang),
+      sourceRaw,
+      gif: row.gif,
+      createdBy: "app",
+    };
+  });
+}
+
 type ExerciseFormState = {
   name: string;
   target: string;
@@ -104,11 +224,23 @@ function FilterSelect({ label, options, value, onChange }: { label: string; opti
 export function ExerciseManagement() {
   const { lang, t } = useLang();
   const fd = filtersData[lang];
-  const [exercises, setExercises] = useState<ExerciseItem[]>(exercisesFallback[lang]);
+  const arFd = filtersData.ar;
+  const enFd = filtersData.en;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [exercises, setExercises] = useState<ExerciseItem[]>(() => buildFallback(lang));
   const canUseFirebase = Boolean(db && hasFirebaseConfig);
 
   const [filters, setFilters] = useState({ target: fd.all, equipment: fd.all, difficulty: fd.all, source: fd.all, creator: fd.all });
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    const q = searchParams.get("q") ?? "";
+    setSearch((prev) => (q !== prev ? q : prev));
+  }, [searchParams]);
+
+  useEffect(() => {
+    setFilters({ target: fd.all, equipment: fd.all, difficulty: fd.all, source: fd.all, creator: fd.all });
+  }, [lang, fd.all]);
   const [live, setLive] = useState(false);
   const [pendingId, setPendingId] = useState<string | number | null>(null);
   const [busyUpload, setBusyUpload] = useState(false);
@@ -137,7 +269,7 @@ export function ExerciseManagement() {
 
   useEffect(() => {
     if (!db || !hasFirebaseConfig) {
-      setExercises(exercisesFallback[lang]);
+      setExercises(buildFallback(lang));
       setLive(false);
       return;
     }
@@ -151,20 +283,35 @@ export function ExerciseManagement() {
         console.error("[ExerciseManagement] loadExercises", resp.error);
         if (!cancelled) {
           setLive(false);
-          setExercises(exercisesFallback[lang]);
+          setExercises(buildFallback(lang));
         }
         return;
       }
       const rows = resp.data ?? [];
       const mapped = rows.map((data, idx) => {
-        const diff = data.level?.toString() ?? data.difficulty?.toString() ?? (lang === "ar" ? "مبتدئ" : "Beginner");
+        const nameEn = data.name?.toString() ?? "";
+        const nameAr = data.name_ar?.toString() ?? "";
+        const targetRaw = (data.target ?? data.body_part ?? "").toString();
+        const equipmentRaw = (data.equipment ?? "").toString();
+        const levelRaw = (data.level ?? data.difficulty ?? "beginner").toString();
+        const sourceRaw = (data.source ?? "App").toString();
+        const createdByRaw = (data.created_by?.toString() ?? "app").toLowerCase();
+        const createdBy: "app" | "trainer" | "admin" =
+          createdByRaw === "trainer" ? "trainer" : createdByRaw === "admin" ? "admin" : "app";
         return {
           id: data.id || idx,
-          name: lang === "ar" ? (data.name_ar?.toString() ?? data.name?.toString() ?? "تمرين") : (data.name?.toString() ?? data.name_ar?.toString() ?? "Exercise"),
-          target: data.target?.toString() ?? data.body_part?.toString() ?? (lang === "ar" ? "الكل" : "All"),
-          difficulty: diff,
-          equipment: data.equipment?.toString() ?? (lang === "ar" ? "وزن الجسم" : "Bodyweight"),
-          source: data.source?.toString() ?? "App",
+          name: lang === "ar" ? (nameAr || nameEn || "تمرين") : (nameEn || nameAr || "Exercise"),
+          nameEn,
+          nameAr,
+          target: targetRaw || (lang === "ar" ? "—" : "—"),
+          targetRaw: targetRaw || (lang === "ar" ? "—" : "—"),
+          equipment: equipmentRaw || (lang === "ar" ? "وزن الجسم" : "Bodyweight"),
+          equipmentRaw: equipmentRaw || (lang === "ar" ? "وزن الجسم" : "Bodyweight"),
+          levelRaw,
+          difficulty: localizeDifficulty(levelRaw, lang),
+          source: displaySource(sourceRaw, lang),
+          sourceRaw,
+          createdBy,
           gif: "🏋️",
           gifUrl: data.media_url?.toString() ?? data.image_asset_path?.toString(),
           mediaType: (data.media_type?.toString() === "video" ? "video" : "image"),
@@ -181,7 +328,7 @@ export function ExerciseManagement() {
 
     ensureStaffAuth().then((authed) => {
       if (!authed || cancelled) {
-        setExercises(exercisesFallback[lang]);
+        setExercises(buildFallback(lang));
         setLive(false);
         return;
       }
@@ -202,15 +349,32 @@ export function ExerciseManagement() {
     };
   }, [lang]);
 
-  // Reset filters on language change handled by using fd.all as default comparisons
-  const filtered = useMemo(() => exercises.filter((e) => {
-    if (filters.target !== fd.all && e.target !== filters.target) return false;
-    if (filters.equipment !== fd.all && e.equipment !== filters.equipment) return false;
-    if (filters.difficulty !== fd.all && e.difficulty !== filters.difficulty) return false;
-    if (filters.source !== fd.all && e.source !== filters.source) return false;
-    if (search && !e.name.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  }), [exercises, fd.all, filters.difficulty, filters.equipment, filters.source, filters.target, search]);
+  const filtered = useMemo(
+    () =>
+      exercises.filter((e) => {
+        if (!bilingualOptionMatches(e.targetRaw, filters.target, fd.all, arFd.target, enFd.target)) return false;
+        if (!bilingualOptionMatches(e.equipmentRaw, filters.equipment, fd.all, arFd.equipment, enFd.equipment)) return false;
+        if (!bilingualOptionMatches(e.levelRaw, filters.difficulty, fd.all, arFd.difficulty, enFd.difficulty)) return false;
+        if (!sourceFilterMatches(e.sourceRaw, filters.source, fd.all, arFd.source, enFd.source)) return false;
+        if (!creatorFilterMatches(e.createdBy, filters.creator, fd.all, arFd.creator, enFd.creator)) return false;
+        const hay = [
+          e.name,
+          e.nameEn,
+          e.nameAr,
+          e.targetRaw,
+          e.equipmentRaw,
+          e.levelRaw,
+          e.sourceRaw,
+          e.ttsScript,
+          e.ttsScriptAr,
+        ]
+          .filter(Boolean)
+          .join(" ");
+        if (!textMatchesQuery(hay, search)) return false;
+        return true;
+      }),
+    [arFd, enFd, exercises, fd.all, filters, search],
+  );
 
   const headers = lang === "ar"
     ? ["الصورة", "اسم التمرين", "العضلة المستهدفة", "المستوى", "الأدوات", "المصدر", "الإجراءات"]
@@ -414,18 +578,26 @@ export function ExerciseManagement() {
     if (!validateSelectedFile(selectedMediaFile) || !validateSelectedFile(selectedAudioFile)) return;
 
     if (!canUseFirebase || !db) {
+      const levelRaw = normalizeLevelKey(input.difficulty);
       const localExercise: ExerciseItem = {
         id: `local-${Date.now()}`,
         name: input.name,
+        nameEn: input.name,
+        nameAr: input.name,
         target: input.target,
+        targetRaw: input.target,
         equipment: input.equipment,
-        difficulty: input.difficulty,
-        source: lang === "ar" ? "يدوي" : "Manual",
+        equipmentRaw: input.equipment,
+        levelRaw,
+        difficulty: localizeDifficulty(levelRaw, lang),
+        source: displaySource("Manual", lang),
+        sourceRaw: "Manual",
         gif: "🏋️",
         gifUrl: input.gifUrl,
         audioUrl: input.audioUrl,
         ttsScript: input.ttsScript,
         ttsScriptAr: input.ttsScriptAr,
+        createdBy: "trainer",
       };
       setExercises((prev) => [localExercise, ...prev]);
       resetModalState();
@@ -491,8 +663,24 @@ export function ExerciseManagement() {
     if (!validateSelectedFile(selectedMediaFile) || !validateSelectedFile(selectedAudioFile)) return;
 
     if (!canUseFirebase || !db || typeof exercise.id !== "string") {
+      const levelRaw = normalizeLevelKey(input.difficulty);
       setExercises((prev) =>
-        prev.map((item) => (item.id === exercise.id ? { ...item, ...input } : item)),
+        prev.map((item) =>
+          item.id === exercise.id
+            ? {
+                ...item,
+                ...input,
+                nameEn: lang === "en" ? input.name : item.nameEn,
+                nameAr: lang === "ar" ? input.name : item.nameAr,
+                targetRaw: input.target,
+                equipmentRaw: input.equipment,
+                levelRaw,
+                difficulty: localizeDifficulty(levelRaw, lang),
+                source: item.source,
+                sourceRaw: item.sourceRaw,
+              }
+            : item,
+        ),
       );
       resetModalState();
       return;
@@ -553,6 +741,11 @@ export function ExerciseManagement() {
     try {
       setPendingId(exercise.id);
       await ensureStaffAuth();
+      const paths = storagePathsFromExerciseMediaPublicUrls([exercise.gifUrl, exercise.audioUrl]);
+      if (paths.length > 0) {
+        const rm = await db.storage.from("exercise-media").remove(paths);
+        if (rm.error) console.warn("[ExerciseManagement] storage remove", rm.error);
+      }
       await db.from("exercises").delete().eq("id", exercise.id);
     } finally {
       setPendingId(null);
@@ -584,18 +777,25 @@ export function ExerciseManagement() {
       </div>
 
       {/* Filter Bar */}
-      <div className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <div className="flex min-w-0 items-stretch gap-2 sm:col-span-2 lg:col-span-3 xl:col-span-2">
+      <div className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
+        <div className="flex min-w-0 items-stretch gap-2 sm:col-span-2 lg:col-span-3 xl:col-span-2 2xl:col-span-2">
           <div className="flex shrink-0 items-center ps-1">
             <Filter className="h-4 w-4 text-[#D4AF37]" />
           </div>
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
-              type="text"
+              type="search"
               placeholder={t("ابحث عن تمرين...", "Search exercises...")}
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSearch(v);
+                const next = new URLSearchParams(searchParams);
+                if (v.trim()) next.set("q", v);
+                else next.delete("q");
+                setSearchParams(next, { replace: true });
+              }}
               className="h-10 w-full rounded-lg border border-border bg-secondary py-2 ps-9 pe-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
               style={{ fontSize: 13 }}
             />
@@ -605,6 +805,7 @@ export function ExerciseManagement() {
         <FilterSelect label={t("الأدوات", "Equipment")} options={fd.equipment} value={filters.equipment} onChange={(v) => setFilters({ ...filters, equipment: v })} />
         <FilterSelect label={t("المستوى", "Difficulty")} options={fd.difficulty} value={filters.difficulty} onChange={(v) => setFilters({ ...filters, difficulty: v })} />
         <FilterSelect label={t("المصدر", "Source")} options={fd.source} value={filters.source} onChange={(v) => setFilters({ ...filters, source: v })} />
+        <FilterSelect label={t("المنشئ", "Creator")} options={fd.creator} value={filters.creator} onChange={(v) => setFilters({ ...filters, creator: v })} />
       </div>
 
       {/* Data Table */}
