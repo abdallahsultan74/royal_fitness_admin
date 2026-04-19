@@ -2,6 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, hasFirebaseConfig, isLocalAuthMode } from "../firebase";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
 
 type Subscription = {
   id: string | number;
@@ -33,6 +42,8 @@ export function Subscriptions() {
   const [debugPendingCount, setDebugPendingCount] = useState<number | null>(null);
   const [debugPendingJoinCount, setDebugPendingJoinCount] = useState<number | null>(null);
   const loadRequestsRef = useRef<(() => Promise<void>) | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Subscription | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
     if (!db || !hasFirebaseConfig) {
@@ -314,23 +325,35 @@ export function Subscriptions() {
     }
   };
 
-  const deleteRequest = async (item: Subscription) => {
-    if (!window.confirm(t("حذف هذا الطلب نهائياً من القائمة؟", "Permanently delete this request from the list?"))) return;
-    if (!live || !db || !hasFirebaseConfig || typeof item.id !== "string") {
+  const requestDelete = (item: Subscription) => {
+    setDeleteTarget(item);
+  };
+
+  const confirmDeleteRequest = async () => {
+    const item = deleteTarget;
+    if (!item) return;
+    if (!live || !db || !hasFirebaseConfig) {
       setSubscriptions((prev) => prev.filter((s) => s.id !== item.id));
+      setDeleteTarget(null);
       return;
     }
+    const id = String(item.id);
+    setDeleteBusy(true);
+    setPendingId(item.id);
+    setAuthError(null);
     try {
-      setPendingId(item.id);
       await ensureStaffAuth();
-      const { error } = await db.from("subscription_requests").delete().eq("id", item.id);
+      const { error } = await db.from("subscription_requests").delete().eq("id", id);
       if (error) {
-        window.alert(error.message);
-      } else {
-        await loadRequestsRef.current?.();
+        setAuthError(error.message);
+        return;
       }
+      setSubscriptions((prev) => prev.filter((s) => String(s.id) !== id));
+      await loadRequestsRef.current?.();
     } finally {
+      setDeleteBusy(false);
       setPendingId(null);
+      setDeleteTarget(null);
     }
   };
 
@@ -416,7 +439,7 @@ export function Subscriptions() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => deleteRequest(s)}
+                      onClick={() => requestDelete(s)}
                       disabled={pendingId === s.id}
                       className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1.5 text-red-400 hover:border-red-500/40 hover:bg-red-500/10 disabled:opacity-50"
                       style={{ fontSize: 12 }}
@@ -433,6 +456,45 @@ export function Subscriptions() {
         </table>
         </div>
       </div>
+
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && !deleteBusy && setDeleteTarget(null)}>
+        <AlertDialogContent className="border-border bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-[#F5EAD4]">
+              {t("تأكيد حذف الطلب", "Confirm delete request")}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  {t(
+                    "سيتم حذف طلب الاشتراك نهائياً. لا يمكن التراجع.",
+                    "This subscription request will be permanently deleted. This cannot be undone.",
+                  )}
+                </p>
+                {deleteTarget ? (
+                  <p className="text-[#F5EAD4]" style={{ fontSize: 13 }}>
+                    <span className="font-medium">{deleteTarget.userName}</span>
+                    <span className="text-muted-foreground"> · {deleteTarget.userEmail}</span>
+                  </p>
+                ) : null}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteBusy} className="border-border">
+              {t("إلغاء", "Cancel")}
+            </AlertDialogCancel>
+            <button
+              type="button"
+              disabled={deleteBusy}
+              onClick={() => void confirmDeleteRequest()}
+              className="inline-flex h-9 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:pointer-events-none disabled:opacity-50"
+            >
+              {deleteBusy ? t("جارٍ الحذف…", "Deleting…") : t("حذف نهائي", "Delete permanently")}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

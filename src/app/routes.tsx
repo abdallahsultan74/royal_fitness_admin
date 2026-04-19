@@ -8,6 +8,7 @@ import { Plans } from "./components/Plans";
 import { SettingsPage } from "./components/SettingsPage";
 import { Subscriptions } from "./components/Subscriptions";
 import { Notifications } from "./components/Notifications";
+import { ChallengesManagement } from "./components/ChallengesManagement";
 import { Login } from "./components/Login";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
       { path: "users", Component: UserManagement },
       { path: "users/:id", Component: UserDetailsPage },
       { path: "plans", Component: Plans },
+      { path: "challenges", Component: ChallengesManagement },
       { path: "subscriptions", Component: Subscriptions },
       { path: "analytics", Component: ComingSoon },
       { path: "support", Component: ComingSoon },

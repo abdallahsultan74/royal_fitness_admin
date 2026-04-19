@@ -8,6 +8,10 @@ import {
   ArrowUpLeft,
   ArrowUpRight,
   Eye,
+  Flame,
+  Clock,
+  Footprints,
+  Target,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -36,6 +40,12 @@ export function Dashboard() {
   const [avgBmi, setAvgBmi] = useState<number | null>(null);
   const [todayWeightLogs, setTodayWeightLogs] = useState<number | null>(null);
   const [activeChallenges, setActiveChallenges] = useState<number | null>(null);
+  const [platformTodayCalories, setPlatformTodayCalories] = useState<number | null>(null);
+  const [platformTodayMinutes, setPlatformTodayMinutes] = useState<number | null>(null);
+  const [platformTodaySteps, setPlatformTodaySteps] = useState<number | null>(null);
+  const [profilesWithBmiCount, setProfilesWithBmiCount] = useState<number | null>(null);
+  const [activeChallengeTemplates, setActiveChallengeTemplates] = useState<number | null>(null);
+  const [activePlanAssignments, setActivePlanAssignments] = useState<number | null>(null);
   const [dataLive, setDataLive] = useState(false);
 
   useEffect(() => {
@@ -86,6 +96,54 @@ export function Dashboard() {
       setActiveChallenges(
         progressRows.filter((row) => String(row.challenge_status ?? "") === "active").length,
       );
+
+      const dailyStatsResp = await db
+        .from("daily_stats")
+        .select("total_calories, total_minutes, steps")
+        .eq("date_key", todayKey);
+      if (dailyStatsResp.error) {
+        console.error("[Dashboard] daily_stats", dailyStatsResp.error);
+        setPlatformTodayCalories(null);
+        setPlatformTodayMinutes(null);
+        setPlatformTodaySteps(null);
+      } else {
+        const dsRows = (dailyStatsResp.data ?? []) as Array<{
+          total_calories?: number | string | null;
+          total_minutes?: number | string | null;
+          steps?: number | string | null;
+        }>;
+        setPlatformTodayCalories(
+          dsRows.reduce((acc, r) => acc + (Number(r.total_calories) || 0), 0),
+        );
+        setPlatformTodayMinutes(
+          dsRows.reduce((acc, r) => acc + (Number(r.total_minutes) || 0), 0),
+        );
+        setPlatformTodaySteps(dsRows.reduce((acc, r) => acc + (Number(r.steps) || 0), 0));
+      }
+
+      setProfilesWithBmiCount(bmiValues.length);
+
+      const templatesCountResp = await db
+        .from("challenge_templates")
+        .select("id", { count: "exact", head: true })
+        .eq("is_active", true);
+      if (templatesCountResp.error) {
+        console.error("[Dashboard] challenge_templates count", templatesCountResp.error);
+        setActiveChallengeTemplates(null);
+      } else {
+        setActiveChallengeTemplates(templatesCountResp.count ?? 0);
+      }
+
+      const assignmentsCountResp = await db
+        .from("plan_assignments")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "active");
+      if (assignmentsCountResp.error) {
+        console.error("[Dashboard] plan_assignments count", assignmentsCountResp.error);
+        setActivePlanAssignments(null);
+      } else {
+        setActivePlanAssignments(assignmentsCountResp.count ?? 0);
+      }
 
       const revenueTotal = users.reduce((sum, user) => {
         const plan = String(user.plan).toLowerCase();
@@ -273,6 +331,83 @@ export function Dashboard() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
+          <div className="flex items-center gap-2 text-muted-foreground text-xs sm:text-[12px]">
+            <Flame className="h-4 w-4 shrink-0 text-[#D4AF37]" />
+            {t("نشاط المنصّة اليوم — السعرات", "Platform today — calories")}
+          </div>
+          <p className="mt-2 truncate text-[#F5EAD4] text-2xl font-semibold sm:text-[26px]">
+            {platformTodayCalories != null ? platformTodayCalories.toLocaleString() : "—"}
+          </p>
+          <p className="text-muted-foreground mt-1 text-[11px] sm:text-xs">
+            {t("مجموع daily_stats لتاريخ اليوم", "Sum of daily_stats for today")}
+          </p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
+          <div className="flex items-center gap-2 text-muted-foreground text-xs sm:text-[12px]">
+            <Clock className="h-4 w-4 shrink-0 text-emerald-400" />
+            {t("الدقائق / الخطوات", "Minutes / steps")}
+          </div>
+          <p className="mt-2 text-[#F5EAD4] text-lg font-semibold sm:text-xl">
+            {platformTodayMinutes != null ? platformTodayMinutes.toLocaleString() : "—"}{" "}
+            <span className="text-muted-foreground text-sm font-normal">min</span>
+          </p>
+          <p className="mt-1 text-[#F5EAD4] text-lg font-semibold sm:text-xl">
+            {platformTodaySteps != null ? platformTodaySteps.toLocaleString() : "—"}{" "}
+            <span className="text-muted-foreground text-sm font-normal">steps</span>
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate("/users")}
+          className="rounded-xl border border-border bg-card p-4 text-start transition-colors hover:border-[#D4AF37]/30 sm:p-5"
+        >
+          <div className="flex items-center gap-2 text-muted-foreground text-xs sm:text-[12px]">
+            <Target className="h-4 w-4 shrink-0 text-[#D4AF37]" />
+            {t("BMI في الملفات", "BMI on record")}
+          </div>
+          <p className="mt-2 text-[#F5EAD4] text-2xl font-semibold sm:text-[26px]">
+            {profilesWithBmiCount != null ? profilesWithBmiCount.toLocaleString() : "—"}
+          </p>
+          <p className="text-muted-foreground mt-2 text-[11px] sm:text-xs">
+            {t("متوسط BMI:", "Avg BMI:")}{" "}
+            <span className="text-[#F5EAD4]">{avgBmi && avgBmi > 0 ? avgBmi : "—"}</span> ·{" "}
+            {t("عرض المستخدمين →", "View users →")}
+          </p>
+        </button>
+        <div className="grid grid-cols-1 gap-2">
+          <button
+            type="button"
+            onClick={() => navigate("/challenges")}
+            className="rounded-xl border border-border bg-card p-4 text-start transition-colors hover:border-[#D4AF37]/30 sm:p-5"
+          >
+            <div className="flex items-center gap-2 text-muted-foreground text-xs sm:text-[12px]">
+              <Trophy className="h-4 w-4 shrink-0 text-[#D4AF37]" />
+              {t("قوالب التحديات النشطة", "Active challenge templates")}
+            </div>
+            <p className="mt-2 text-[#F5EAD4] text-xl font-semibold">
+              {activeChallengeTemplates != null ? activeChallengeTemplates : "—"}
+            </p>
+            <p className="text-muted-foreground mt-1 text-[11px]">{t("إدارة التحديات →", "Manage challenges →")}</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/plans")}
+            className="rounded-xl border border-border bg-card p-4 text-start transition-colors hover:border-[#D4AF37]/30 sm:p-5"
+          >
+            <div className="flex items-center gap-2 text-muted-foreground text-xs sm:text-[12px]">
+              <Footprints className="h-4 w-4 shrink-0 text-emerald-400" />
+              {t("إسنادات الخطط النشطة", "Active plan assignments")}
+            </div>
+            <p className="mt-2 text-[#F5EAD4] text-xl font-semibold">
+              {activePlanAssignments != null ? activePlanAssignments : "—"}
+            </p>
+            <p className="text-muted-foreground mt-1 text-[11px]">{t("الخطط والـ JSON →", "Plans & JSON →")}</p>
+          </button>
+        </div>
       </div>
 
       {/* Chart + Recent */}
