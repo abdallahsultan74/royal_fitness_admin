@@ -22,11 +22,8 @@ to authenticated
 using (public.is_admin() or public.is_coach());
 
 -- ========== RPC: include profile role ==========
--- Return type changed (added role): must drop first — Postgres disallows CREATE OR REPLACE for different OUT row types.
 
-drop function if exists public.api_admin_user_progress_summary();
-
-create function public.api_admin_user_progress_summary()
+create or replace function public.api_admin_user_progress_summary()
 returns table (
   user_id uuid,
   email text,
@@ -105,5 +102,3 @@ as $$
     on s.user_id = p.id
   where public.is_admin() or public.is_coach();
 $$;
-
-grant execute on function public.api_admin_user_progress_summary() to authenticated;
