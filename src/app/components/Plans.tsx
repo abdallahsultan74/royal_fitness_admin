@@ -477,110 +477,140 @@ export function Plans() {
         </div>
       </div>
 
-      {/* Modal: create/edit */}
+      {/* Modal: create/edit — scrollable body + sticky actions (mobile + desktop) */}
       {openForm ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center">
-          <button type="button" className="absolute inset-0 bg-black/60" onClick={() => setOpenForm(false)} aria-label="Close" />
-          <div className="relative z-10 w-[min(720px,92vw)] rounded-2xl border border-border bg-card p-4 shadow-2xl">
-            <h2 className="text-lg text-[#F5EAD4] sm:text-xl">{editing ? t("تعديل خطة", "Edit plan") : t("خطة جديدة", "New plan")}</h2>
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <label className="text-muted-foreground" style={{ fontSize: 12 }}>
-                  {t("العنوان", "Title")}
-                </label>
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[#F5EAD4]"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="text-muted-foreground" style={{ fontSize: 12 }}>
-                  {t("الوصف", "Description")}
-                </label>
-                <textarea
-                  value={desc}
-                  onChange={(e) => setDesc(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[#F5EAD4]"
-                  rows={3}
-                />
-              </div>
-              <div>
-                <label className="text-muted-foreground" style={{ fontSize: 12 }}>
-                  {t("المستوى", "Level")}
-                </label>
-                <select
-                  value={level}
-                  onChange={(e) => setLevel(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[#F5EAD4]"
-                >
-                  <option value="beginner">{t("مبتدئ", "Beginner")}</option>
-                  <option value="intermediate">{t("متوسط", "Intermediate")}</option>
-                  <option value="advanced">{t("متقدم", "Advanced")}</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-muted-foreground" style={{ fontSize: 12 }}>
-                  {t("المدة (أسابيع)", "Duration (weeks)")}
-                </label>
-                <input
-                  type="number"
-                  value={weeks}
-                  onChange={(e) => setWeeks(Number(e.target.value))}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[#F5EAD4]"
-                  min={1}
-                />
-              </div>
+        <div className="fixed inset-0 z-[70] flex items-end justify-center overflow-y-auto overscroll-contain bg-black/60 p-0 sm:items-center sm:p-4">
+          <button
+            type="button"
+            className="fixed inset-0 z-0 cursor-default bg-transparent sm:absolute"
+            onClick={() => setOpenForm(false)}
+            aria-label="Close"
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="plan-form-title"
+            className="relative z-10 flex max-h-[min(92dvh,920px)] w-full max-w-[720px] flex-col overflow-hidden rounded-t-2xl border border-border bg-card shadow-2xl sm:max-h-[min(88dvh,900px)] sm:rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="shrink-0 border-b border-border/60 px-4 pb-3 pt-4">
+              <h2 id="plan-form-title" className="text-lg text-[#F5EAD4] sm:text-xl">
+                {editing ? t("تعديل خطة", "Edit plan") : t("خطة جديدة", "New plan")}
+              </h2>
             </div>
-            <PlanJsonEditor value={jsonDraft} onChange={setJsonDraft} t={t} />
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setOpenForm(false)}
-                className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground hover:bg-secondary/60"
-              >
-                {t("إلغاء", "Cancel")}
-              </button>
-              <button
-                type="button"
-                onClick={savePlan}
-                disabled={saving}
-                className="inline-flex items-center gap-2 rounded-lg bg-[#D4AF37] px-3 py-2 text-sm font-medium text-[#0B2F24] disabled:opacity-60"
-              >
-                <Save className="h-4 w-4" />
-                {saving ? t("جارٍ الحفظ…", "Saving…") : t("حفظ", "Save")}
-              </button>
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-4 py-3 [-webkit-overflow-scrolling:touch]">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="text-muted-foreground" style={{ fontSize: 12 }}>
+                    {t("العنوان", "Title")}
+                  </label>
+                  <input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[#F5EAD4]"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-muted-foreground" style={{ fontSize: 12 }}>
+                    {t("الوصف", "Description")}
+                  </label>
+                  <textarea
+                    value={desc}
+                    onChange={(e) => setDesc(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[#F5EAD4]"
+                    rows={3}
+                  />
+                </div>
+                <div>
+                  <label className="text-muted-foreground" style={{ fontSize: 12 }}>
+                    {t("المستوى", "Level")}
+                  </label>
+                  <select
+                    value={level}
+                    onChange={(e) => setLevel(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[#F5EAD4]"
+                  >
+                    <option value="beginner">{t("مبتدئ", "Beginner")}</option>
+                    <option value="intermediate">{t("متوسط", "Intermediate")}</option>
+                    <option value="advanced">{t("متقدم", "Advanced")}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-muted-foreground" style={{ fontSize: 12 }}>
+                    {t("المدة (أسابيع)", "Duration (weeks)")}
+                  </label>
+                  <input
+                    type="number"
+                    value={weeks}
+                    onChange={(e) => setWeeks(Number(e.target.value))}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[#F5EAD4]"
+                    min={1}
+                  />
+                </div>
+              </div>
+              <PlanJsonEditor value={jsonDraft} onChange={setJsonDraft} t={t} />
+            </div>
+            <div className="shrink-0 border-t border-border/60 bg-card px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(0,0,0,0.35)]">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOpenForm(false)}
+                  className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground hover:bg-secondary/60"
+                >
+                  {t("إلغاء", "Cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={savePlan}
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#D4AF37] px-3 py-2 text-sm font-medium text-[#0B2F24] disabled:opacity-60"
+                >
+                  <Save className="h-4 w-4" />
+                  {saving ? t("جارٍ الحفظ…", "Saving…") : t("حفظ", "Save")}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       ) : null}
 
-      {/* Modal: assign */}
+      {/* Modal: assign — same scroll pattern as plan form */}
       {assignOpen && assignPlan ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center">
+        <div className="fixed inset-0 z-[70] flex items-end justify-center overflow-y-auto overscroll-contain bg-black/60 p-0 sm:items-center sm:p-4">
           <button
             type="button"
-            className="absolute inset-0 bg-black/60"
+            className="fixed inset-0 z-0 cursor-default bg-transparent sm:absolute"
             onClick={() => {
               setAssignOpen(false);
               setAssignSuccess(null);
             }}
             aria-label="Close"
           />
-          <div className="relative z-10 w-[min(760px,92vw)] rounded-2xl border border-border bg-card p-4 shadow-2xl">
-            <h2 className="text-lg text-[#F5EAD4] sm:text-xl">
-              {t("إسناد الخطة", "Assign plan")} · {assignPlan.title}
-            </h2>
-            {assignSuccess ? (
-              <div className="mt-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-emerald-200" style={{ fontSize: 13 }}>
-                {assignSuccess}
-              </div>
-            ) : null}
-            <div className="mt-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative z-10 flex max-h-[min(92dvh,920px)] w-full max-w-[760px] flex-col overflow-hidden rounded-t-2xl border border-border bg-card p-0 shadow-2xl sm:max-h-[min(88dvh,900px)] sm:rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="shrink-0 border-b border-border/60 px-4 pb-3 pt-4">
+              <h2 className="text-lg text-[#F5EAD4] sm:text-xl">
+                {t("إسناد الخطة", "Assign plan")} · {assignPlan.title}
+              </h2>
+              {assignSuccess ? (
+                <div
+                  className="mt-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-emerald-200"
+                  style={{ fontSize: 13 }}
+                >
+                  {assignSuccess}
+                </div>
+              ) : null}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-3 [-webkit-overflow-scrolling:touch]">
+              <div className="mt-1">
               <div className="text-muted-foreground" style={{ fontSize: 12 }}>
                 {t("المُسندون حاليًا", "Currently assigned")}
               </div>
-              <div className="mt-2 max-h-[28vh] overflow-y-auto rounded-xl border border-border">
+              <div className="mt-2 max-h-[min(28dvh,240px)] overflow-y-auto rounded-xl border border-border sm:max-h-[280px]">
                 {currentPlanAssignments.length === 0 ? (
                   <div className="px-3 py-4 text-center text-muted-foreground" style={{ fontSize: 13 }}>
                     {t("لا يوجد مُسندون بعد.", "No one assigned yet.")}
@@ -603,8 +633,7 @@ export function Plans() {
                       <button
                         type="button"
                         onClick={() => removeAssignment(a.id)}
-                        disabled={a.status !== "active"}
-                        disabled={saving}
+                        disabled={a.status !== "active" || saving}
                         className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-red-500/40 px-2 py-1.5 text-xs text-red-200 hover:bg-red-500/10 disabled:opacity-50"
                       >
                         <UserMinus className="h-3.5 w-3.5" />
@@ -614,19 +643,19 @@ export function Plans() {
                   ))
                 )}
               </div>
-            </div>
-            <div className="mt-4 text-muted-foreground" style={{ fontSize: 12 }}>
-              {t("إضافة مستخدمين", "Add users")}
-            </div>
-            <div className="mt-2">
-              <input
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-                placeholder={t("بحث بالاسم أو البريد…", "Search name or email…")}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[#F5EAD4]"
-              />
-            </div>
-            <div className="mt-3 max-h-[50vh] overflow-y-auto rounded-xl border border-border">
+              </div>
+              <div className="mt-4 text-muted-foreground" style={{ fontSize: 12 }}>
+                {t("إضافة مستخدمين", "Add users")}
+              </div>
+              <div className="mt-2">
+                <input
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder={t("بحث بالاسم أو البريد…", "Search name or email…")}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[#F5EAD4]"
+                />
+              </div>
+              <div className="mt-3 max-h-[min(42dvh,360px)] overflow-y-auto rounded-xl border border-border sm:max-h-[min(50vh,400px)]">
               {filteredUsers.map((u) => {
                 const checked = selectedUserIds.includes(u.id);
                 return (
@@ -653,30 +682,33 @@ export function Plans() {
                   {t("لا يوجد مستخدمون.", "No users.")}
                 </div>
               ) : null}
-            </div>
-            <div className="mt-4 flex items-center justify-between gap-2">
-              <div className="text-muted-foreground" style={{ fontSize: 13 }}>
-                {t(`المحدد: ${selectedUserIds.length}`, `Selected: ${selectedUserIds.length}`)}
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAssignOpen(false);
-                    setAssignSuccess(null);
-                  }}
-                  className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground hover:bg-secondary/60"
-                >
-                  {t("إغلاق", "Close")}
-                </button>
-                <button
-                  type="button"
-                  onClick={assignToSelected}
-                  disabled={saving || selectedUserIds.length === 0}
-                  className="rounded-lg bg-[#D4AF37] px-3 py-2 text-sm font-medium text-[#0B2F24] disabled:opacity-60"
-                >
-                  {saving ? t("جارٍ الإسناد…", "Assigning…") : t("إسناد الآن", "Assign")}
-                </button>
+            </div>
+            <div className="shrink-0 border-t border-border/60 bg-card px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(0,0,0,0.35)]">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-muted-foreground" style={{ fontSize: 13 }}>
+                  {t(`المحدد: ${selectedUserIds.length}`, `Selected: ${selectedUserIds.length}`)}
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAssignOpen(false);
+                      setAssignSuccess(null);
+                    }}
+                    className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground hover:bg-secondary/60"
+                  >
+                    {t("إغلاق", "Close")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={assignToSelected}
+                    disabled={saving || selectedUserIds.length === 0}
+                    className="rounded-lg bg-[#D4AF37] px-3 py-2 text-sm font-medium text-[#0B2F24] disabled:opacity-60"
+                  >
+                    {saving ? t("جارٍ الإسناد…", "Assigning…") : t("إسناد الآن", "Assign")}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

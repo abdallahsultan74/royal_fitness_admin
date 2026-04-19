@@ -317,7 +317,7 @@ export function PlanJsonEditor(props: {
   }, [exRows, exSearch]);
 
   return (
-    <div className="mt-4 space-y-3 rounded-xl border border-border/60 bg-secondary/20 p-3">
+    <div className="mt-4 min-h-0 space-y-3 rounded-xl border border-border/60 bg-secondary/20 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 600 }}>
           {t("خطة اليوم (فترات وتمارين)", "Today's plan (slots & exercises)")}
@@ -563,10 +563,18 @@ export function PlanJsonEditor(props: {
       })}
 
       {picker ? (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center">
-          <button type="button" className="absolute inset-0 bg-black/60" onClick={() => setPicker(null)} aria-label="close" />
-          <div className="relative z-10 max-h-[80vh] w-[min(520px,92vw)] overflow-hidden rounded-xl border border-border bg-card shadow-xl">
-            <div className="border-b border-border p-3">
+        <div className="fixed inset-0 z-[80] flex items-end justify-center overflow-y-auto overscroll-contain bg-black/60 p-0 sm:items-center sm:p-4">
+          <button
+            type="button"
+            className="fixed inset-0 z-0 cursor-default bg-transparent sm:absolute"
+            onClick={() => setPicker(null)}
+            aria-label="close"
+          />
+          <div
+            className="relative z-10 flex max-h-[min(88dvh,720px)] w-full max-w-[520px] flex-col overflow-hidden rounded-t-2xl border border-border bg-card shadow-xl sm:rounded-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="shrink-0 border-b border-border p-3">
               <p className="text-[#F5EAD4]" style={{ fontSize: 14 }}>
                 {t("اختر تمرينًا", "Pick an exercise")}
               </p>
@@ -578,7 +586,7 @@ export function PlanJsonEditor(props: {
                 style={{ fontSize: 12 }}
               />
             </div>
-            <div className="max-h-[55vh] overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]">
               {exLoading ? (
                 <p className="p-3 text-muted-foreground" style={{ fontSize: 12 }}>
                   {t("جاري التحميل…", "Loading…")}
