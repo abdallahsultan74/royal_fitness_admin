@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Mail, Phone, Scale, Activity, Dumbbell, Save, Send } from "lucide-react";
 import { useLang } from "./LanguageContext";
-import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
+import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
 
 type ProfileRow = {
   id: string;
@@ -104,7 +104,7 @@ export function UserDetailsPage() {
     setLoading(true);
     setAuthError(null);
     try {
-      await ensureAdminAuth();
+      await ensureStaffAuth();
       const [pRes, wRes, dRes, sRes] = await Promise.all([
         db.from("profiles").select("*").eq("id", userId).maybeSingle(),
         db.from("weight_logs").select("*").eq("user_id", userId).order("logged_at", { ascending: false }).limit(180),
@@ -181,7 +181,7 @@ export function UserDetailsPage() {
     if (!db || !hasFirebaseConfig || !userId) return;
     setSaving(true);
     try {
-      await ensureAdminAuth();
+      await ensureStaffAuth();
       const nextRole = ["user", "coach", "admin"].includes(roleDraft) ? roleDraft : "user";
       const nextWhats = whatsDraft.trim() || null;
       const resp = await db.from("profiles").update({ role: nextRole, whatsapp_phone: nextWhats }).eq("id", userId);
@@ -202,7 +202,7 @@ export function UserDetailsPage() {
     setSaving(true);
     setAuthError(null);
     try {
-      await ensureAdminAuth();
+      await ensureStaffAuth();
       const resp = await db.from("user_notifications").insert({
         user_id: userId,
         type: msgType,

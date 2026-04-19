@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { X, Activity, Dumbbell, Scale } from "lucide-react";
 import { useLang } from "./LanguageContext";
-import { db, ensureAdminAuth, hasFirebaseConfig } from "../firebase";
+import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
 
 type WeightRow = { logged_at: string; weight_kg: number; source?: string };
 type DailyRow = {
@@ -50,7 +50,7 @@ export function UserActivityDrawer({ open, userId, userName, onClose }: Props) {
     if (!db || !hasFirebaseConfig || !userId) return;
     setLoading(true);
     try {
-      await ensureAdminAuth();
+      await ensureStaffAuth();
       const [wRes, dRes, sRes] = await Promise.all([
         db.from("weight_logs").select("*").eq("user_id", userId).order("logged_at", { ascending: false }).limit(90),
         db.from("daily_stats").select("*").eq("user_id", userId).order("date_key", { ascending: false }).limit(90),

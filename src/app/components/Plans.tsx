@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Save, Users } from "lucide-react";
+import { Plus, Save, Trash2, UserMinus, Users } from "lucide-react";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
 
@@ -15,6 +15,15 @@ type PlanRow = {
 };
 
 type ProfileLite = { id: string; name: string | null; email: string | null };
+
+type PlanAssignmentRow = {
+  id: string;
+  plan_id: string;
+  user_id: string;
+  status: string;
+  created_at: string;
+  profile?: ProfileLite | null;
+};
 
 export function Plans() {
   const { t, isRTL } = useLang();
@@ -38,6 +47,8 @@ export function Plans() {
   const [userSearch, setUserSearch] = useState("");
   const [users, setUsers] = useState<ProfileLite[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [assignments, setAssignments] = useState<PlanAssignmentRow[]>([]);
+  const [assignSuccess, setAssignSuccess] = useState<string | null>(null);
 
   const resetForm = () => {
     setEditing(null);
@@ -56,16 +67,49 @@ export function Plans() {
       if (!authed) {
         setLive(false);
         setPlans([]);
+        setAssignments([]);
         return;
       }
       const resp = await db.from("training_plans").select("*").order("created_at", { ascending: false });
       if (resp.error) {
         setAuthError(resp.error.message);
         setLive(false);
-      } else {
-        setLive(true);
+        setPlans([]);
+        setAssignments([]);
+        return;
       }
-      setPlans((resp.data ?? []) as any);
+      setLive(true);
+      const planRows = (resp.data ?? []) as PlanRow[];
+      setPlans(planRows);
+      if (planRows.length === 0) {
+        setAssignments([]);
+      } else {
+        const ids = planRows.map((p) => p.id);
+        const ar = await db
+          .from("plan_assignments")
+          .select("id, plan_id, user_id, status, created_at")
+          .in("plan_id", ids)
+          .order("created_at", { ascending: false });
+        if (ar.error) {
+          setAssignments([]);
+        } else {
+          const raw = (ar.data ?? []) as Omit<PlanAssignmentRow, "profile">[];
+          const uids = [...new Set(raw.map((r) => r.user_id))];
+          let profileById: Record<string, ProfileLite> = {};
+          if (uids.length) {
+            const pr = await db.from("profiles").select("id, name, email").in("id", uids);
+            if (!pr.error && pr.data) {
+              profileById = Object.fromEntries((pr.data as ProfileLite[]).map((p) => [p.id, p]));
+            }
+          }
+          setAssignments(
+            raw.map((r) => ({
+              ...r,
+              profile: profileById[r.user_id] ?? null,
+            })),
+          );
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -97,6 +141,11 @@ export function Plans() {
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "training_plans" },
+          () => loadPlans(),
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "plan_assignments" },
           () => loadPlans(),
         )
         .subscribe();
@@ -165,15 +214,26 @@ export function Plans() {
   const openAssign = async (p: PlanRow) => {
     setAssignPlan(p);
     setAssignOpen(true);
+    setAssignSuccess(null);
     setSelectedUserIds([]);
     await loadUsers();
   };
 
+  const assignedUserIdsForOpenPlan = useMemo(() => {
+    if (!assignPlan) return new Set<string>();
+    return new Set(assignments.filter((a) => a.plan_id === assignPlan.id).map((a) => a.user_id));
+  }, [assignPlan, assignments]);
+
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
-    if (!q) return users;
-    return users.filter((u) => (u.name ?? "").toLowerCase().includes(q) || (u.email ?? "").toLowerCase().includes(q));
-  }, [userSearch, users]);
+    let list = users.filter((u) => !assignedUserIdsForOpenPlan.has(u.id));
+    if (q) {
+      list = list.filter(
+        (u) => (u.name ?? "").toLowerCase().includes(q) || (u.email ?? "").toLowerCase().includes(q),
+      );
+    }
+    return list;
+  }, [userSearch, users, assignedUserIdsForOpenPlan]);
 
   const toggleUser = (id: string) => {
     setSelectedUserIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -181,9 +241,11 @@ export function Plans() {
 
   const assignToSelected = async () => {
     if (!db || !hasFirebaseConfig || !assignPlan) return;
-    if (selectedUserIds.length === 0) return;
+    const newIds = selectedUserIds.filter((id) => !assignedUserIdsForOpenPlan.has(id));
+    if (newIds.length === 0) return;
     setSaving(true);
     setAuthError(null);
+    setAssignSuccess(null);
     try {
       const authed = await ensureStaffAuth();
       if (!authed) {
@@ -197,7 +259,7 @@ export function Plans() {
         return;
       }
 
-      const rows = selectedUserIds.map((uid) => ({
+      const rows = newIds.map((uid) => ({
         plan_id: assignPlan.id,
         user_id: uid,
         assigned_by: staffId,
@@ -208,13 +270,70 @@ export function Plans() {
         setAuthError(resp.error.message);
         return;
       }
-      setAssignOpen(false);
-      setAssignPlan(null);
       setSelectedUserIds([]);
+      setAssignSuccess(
+        t(`تم إسناد الخطة لـ ${newIds.length} مستخدم.`, `Plan assigned to ${newIds.length} user(s).`),
+      );
+      await loadPlans();
     } finally {
       setSaving(false);
     }
   };
+
+  const removeAssignment = async (assignmentId: string) => {
+    if (!db || !hasFirebaseConfig) return;
+    if (!window.confirm(t("إلغاء إسناد هذا المستخدم من الخطة؟", "Remove this user from the plan?"))) return;
+    setSaving(true);
+    setAuthError(null);
+    try {
+      const authed = await ensureStaffAuth();
+      if (!authed) return;
+      const resp = await db.from("plan_assignments").delete().eq("id", assignmentId);
+      if (resp.error) {
+        setAuthError(resp.error.message);
+        return;
+      }
+      setAssignSuccess(t("تم إلغاء الإسناد.", "Assignment removed."));
+      await loadPlans();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deletePlan = async (p: PlanRow) => {
+    if (!db || !hasFirebaseConfig) return;
+    if (
+      !window.confirm(
+        t(`حذف الخطة «${p.title}» نهائيًا؟ لا يمكن التراجع.`, `Permanently delete plan "${p.title}"? This cannot be undone.`),
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    setAuthError(null);
+    try {
+      const authed = await ensureStaffAuth();
+      if (!authed) return;
+      const resp = await db.from("training_plans").delete().eq("id", p.id);
+      if (resp.error) {
+        setAuthError(resp.error.message);
+        return;
+      }
+      if (assignPlan?.id === p.id) {
+        setAssignOpen(false);
+        setAssignPlan(null);
+      }
+      if (editing?.id === p.id) setOpenForm(false);
+      await loadPlans();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const currentPlanAssignments = useMemo(() => {
+    if (!assignPlan) return [];
+    return assignments.filter((a) => a.plan_id === assignPlan.id);
+  }, [assignPlan, assignments]);
 
   return (
     <div className="min-w-0 max-w-full space-y-4 p-4 sm:space-y-6 sm:p-6" dir={isRTL ? "rtl" : "ltr"}>
@@ -246,13 +365,14 @@ export function Plans() {
 
       <div className="rounded-xl border border-border bg-card">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px]">
+          <table className="w-full min-w-[980px]">
             <thead>
               <tr className="border-b border-border">
                 {[
                   t("العنوان", "Title"),
                   t("المستوى", "Level"),
                   t("المدة", "Duration"),
+                  t("المُسندون", "Assigned"),
                   t("تاريخ الإنشاء", "Created"),
                   t("إجراءات", "Actions"),
                 ].map((h) => (
@@ -263,7 +383,14 @@ export function Plans() {
               </tr>
             </thead>
             <tbody>
-              {plans.map((p) => (
+              {plans.map((p) => {
+                const forPlan = assignments.filter((a) => a.plan_id === p.id);
+                const preview = forPlan
+                  .slice(0, 2)
+                  .map((a) => a.profile?.name || a.profile?.email || t("مستخدم", "User"))
+                  .join(isRTL ? "، " : ", ");
+                const more = forPlan.length > 2 ? ` +${forPlan.length - 2}` : "";
+                return (
                 <tr key={p.id} className="border-b border-border/50 hover:bg-[#D4AF37]/[0.03] transition-colors">
                   <td className="px-4 py-3 text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 500 }}>
                     {p.title}
@@ -280,10 +407,21 @@ export function Plans() {
                     {t(`${p.duration_weeks} أسابيع`, `${p.duration_weeks} weeks`)}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground" style={{ fontSize: 13 }}>
+                    <div className="font-medium text-[#D4AF37]/90">{forPlan.length}</div>
+                    {preview ? (
+                      <div className="mt-0.5 max-w-[200px] truncate text-muted-foreground" style={{ fontSize: 11 }} title={preview + more}>
+                        {preview}
+                        {more}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11 }}>—</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground" style={{ fontSize: 13 }}>
                     {new Date(p.created_at).toLocaleString(isRTL ? "ar" : "en")}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => openEdit(p)}
@@ -299,13 +437,23 @@ export function Plans() {
                         <Users className="h-4 w-4" />
                         {t("إسناد", "Assign")}
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => deletePlan(p)}
+                        disabled={saving}
+                        className="inline-flex items-center gap-1 rounded-lg border border-red-500/40 bg-card px-3 py-2 text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        {t("حذف", "Delete")}
+                      </button>
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {plans.length === 0 && !loading ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground" style={{ fontSize: 13 }}>
+                  <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground" style={{ fontSize: 13 }}>
                     {t("لا توجد خطط بعد.", "No plans yet.")}
                   </td>
                 </tr>
@@ -395,12 +543,65 @@ export function Plans() {
       {/* Modal: assign */}
       {assignOpen && assignPlan ? (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
-          <button type="button" className="absolute inset-0 bg-black/60" onClick={() => setAssignOpen(false)} aria-label="Close" />
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60"
+            onClick={() => {
+              setAssignOpen(false);
+              setAssignSuccess(null);
+            }}
+            aria-label="Close"
+          />
           <div className="relative z-10 w-[min(760px,92vw)] rounded-2xl border border-border bg-card p-4 shadow-2xl">
             <h2 className="text-lg text-[#F5EAD4] sm:text-xl">
               {t("إسناد الخطة", "Assign plan")} · {assignPlan.title}
             </h2>
-            <div className="mt-3">
+            {assignSuccess ? (
+              <div className="mt-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-emerald-200" style={{ fontSize: 13 }}>
+                {assignSuccess}
+              </div>
+            ) : null}
+            <div className="mt-4">
+              <div className="text-muted-foreground" style={{ fontSize: 12 }}>
+                {t("المُسندون حاليًا", "Currently assigned")}
+              </div>
+              <div className="mt-2 max-h-[28vh] overflow-y-auto rounded-xl border border-border">
+                {currentPlanAssignments.length === 0 ? (
+                  <div className="px-3 py-4 text-center text-muted-foreground" style={{ fontSize: 13 }}>
+                    {t("لا يوجد مُسندون بعد.", "No one assigned yet.")}
+                  </div>
+                ) : (
+                  currentPlanAssignments.map((a) => (
+                    <div
+                      key={a.id}
+                      className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2 last:border-b-0"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-[#F5EAD4]" style={{ fontSize: 13 }}>
+                          {a.profile?.name || t("مستخدم", "User")}
+                        </div>
+                        <div className="truncate text-muted-foreground" style={{ fontSize: 12 }} dir="ltr">
+                          {a.profile?.email || "—"}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeAssignment(a.id)}
+                        disabled={saving}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-red-500/40 px-2 py-1.5 text-xs text-red-200 hover:bg-red-500/10 disabled:opacity-50"
+                      >
+                        <UserMinus className="h-3.5 w-3.5" />
+                        {t("إلغاء", "Remove")}
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="mt-4 text-muted-foreground" style={{ fontSize: 12 }}>
+              {t("إضافة مستخدمين", "Add users")}
+            </div>
+            <div className="mt-2">
               <input
                 value={userSearch}
                 onChange={(e) => setUserSearch(e.target.value)}
@@ -443,10 +644,13 @@ export function Plans() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setAssignOpen(false)}
+                  onClick={() => {
+                    setAssignOpen(false);
+                    setAssignSuccess(null);
+                  }}
                   className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground hover:bg-secondary/60"
                 >
-                  {t("إلغاء", "Cancel")}
+                  {t("إغلاق", "Close")}
                 </button>
                 <button
                   type="button"
