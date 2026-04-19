@@ -1,5 +1,9 @@
 -- Expose challenge cover image on active-challenge RPC for home / banners.
-create or replace function public.api_my_active_challenge()
+-- Return type changed (cover_image_url): drop first — Postgres disallows CREATE OR REPLACE for different OUT row types.
+
+drop function if exists public.api_my_active_challenge();
+
+create function public.api_my_active_challenge()
 returns table (
   user_challenge_id uuid,
   challenge_id uuid,
@@ -40,3 +44,5 @@ as $$
   order by uc.started_at desc
   limit 1;
 $$;
+
+grant execute on function public.api_my_active_challenge() to authenticated;
