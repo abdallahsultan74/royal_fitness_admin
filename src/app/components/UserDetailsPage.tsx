@@ -9,6 +9,8 @@ type ProfileRow = {
   name: string | null;
   email: string | null;
   plan: string | null;
+  plan_expires_at?: string | null;
+  feature_flags?: Record<string, unknown> | null;
   status: string | null;
   role: string | null;
   whatsapp_phone: string | null;
@@ -98,6 +100,10 @@ export function UserDetailsPage() {
   const [msgType, setMsgType] = useState<"notification" | "message">("notification");
   const [msgTitle, setMsgTitle] = useState<string>("");
   const [msgBody, setMsgBody] = useState<string>("");
+  const [planDraft, setPlanDraft] = useState<string>("basic");
+  const [planExpiresInput, setPlanExpiresInput] = useState<string>("");
+  const [adminPlansEnabled, setAdminPlansEnabled] = useState<boolean>(true);
+  const [challengesEnabled, setChallengesEnabled] = useState<boolean>(true);
 
   const load = useCallback(async () => {
     if (!db || !hasFirebaseConfig || !userId) return;
@@ -122,6 +128,20 @@ export function UserDetailsPage() {
       setProfile(prof);
       setRoleDraft(String(prof?.role ?? "user"));
       setWhatsDraft(String(prof?.whatsapp_phone ?? ""));
+      setPlanDraft(String(prof?.plan ?? "basic"));
+      const pe = prof?.plan_expires_at as string | null | undefined;
+      if (pe) {
+        const d = new Date(pe);
+        if (!Number.isNaN(d.getTime())) {
+          const pad = (n: number) => String(n).padStart(2, "0");
+          setPlanExpiresInput(
+            `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
+          );
+        } else setPlanExpiresInput("");
+      } else setPlanExpiresInput("");
+      const ff = (prof?.feature_flags ?? {}) as Record<string, unknown>;
+      setAdminPlansEnabled(ff.admin_plans !== false);
+      setChallengesEnabled(ff.challenges !== false);
       setWeights((wRes.data ?? []) as any);
       setDaily((dRes.data ?? []) as any);
       setSessions((sRes.data ?? []) as any);
@@ -184,12 +204,39 @@ export function UserDetailsPage() {
       await ensureStaffAuth();
       const nextRole = ["user", "coach", "admin"].includes(roleDraft) ? roleDraft : "user";
       const nextWhats = whatsDraft.trim() || null;
-      const resp = await db.from("profiles").update({ role: nextRole, whatsapp_phone: nextWhats }).eq("id", userId);
+      const feature_flags = {
+        admin_plans: adminPlansEnabled,
+        challenges: challengesEnabled,
+      };
+      const planExpiresIso = planExpiresInput.trim()
+        ? new Date(planExpiresInput).toISOString()
+        : null;
+      const resp = await db
+        .from("profiles")
+        .update({
+          role: nextRole,
+          whatsapp_phone: nextWhats,
+          plan: planDraft.trim() || "basic",
+          plan_expires_at: planExpiresIso,
+          feature_flags,
+        })
+        .eq("id", userId);
       if (resp.error) {
         setAuthError(resp.error.message);
         return;
       }
-      setProfile((p) => (p ? { ...p, role: nextRole, whatsapp_phone: nextWhats } : p));
+      setProfile((p) =>
+        p
+          ? {
+              ...p,
+              role: nextRole,
+              whatsapp_phone: nextWhats,
+              plan: planDraft.trim() || "basic",
+              plan_expires_at: planExpiresIso,
+              feature_flags,
+            }
+          : p,
+      );
     } finally {
       setSaving(false);
     }
@@ -333,6 +380,55 @@ export function UserDetailsPage() {
                     <option value="coach">{t("مدرب", "Coach")}</option>
                     <option value="admin">{t("أدمن", "Admin")}</option>
                   </select>
+                </div>
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                  <span className="text-muted-foreground shrink-0">{t("خطة الاشتراك", "Subscription plan")}</span>
+                  <select
+                    value={planDraft}
+                    onChange={(e) => setPlanDraft(e.target.value)}
+                    className="max-w-full rounded-md border border-border bg-card px-2 py-1 text-[#F5EAD4]"
+                    style={{ fontSize: 12 }}
+                  >
+                    <option value="trial">trial</option>
+                    <option value="basic">basic</option>
+                    <option value="pro">pro</option>
+                    <option value="premium">premium</option>
+                    <option value="royal">royal</option>
+                    <option value="elite">elite</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-muted-foreground" style={{ fontSize: 12 }}>
+                    {t("انتهاء الاشتراك (اختياري)", "Plan expiry (optional)")}
+                  </span>
+                  <input
+                    type="datetime-local"
+                    value={planExpiresInput}
+                    onChange={(e) => setPlanExpiresInput(e.target.value)}
+                    className="rounded-md border border-border bg-card px-2 py-1 text-[#F5EAD4]"
+                    style={{ fontSize: 12 }}
+                  />
+                </div>
+                <div className="space-y-2 rounded-md border border-border/40 bg-background/30 p-2">
+                  <p className="text-muted-foreground" style={{ fontSize: 11 }}>
+                    {t("ظهور المحتوى للمستخدم", "Content visibility for this user")}
+                  </p>
+                  <label className="flex cursor-pointer items-center gap-2" style={{ fontSize: 12 }}>
+                    <input
+                      type="checkbox"
+                      checked={adminPlansEnabled}
+                      onChange={(e) => setAdminPlansEnabled(e.target.checked)}
+                    />
+                    <span className="text-[#F5EAD4]">{t("خطط الأدمن (json_plan)", "Admin training plans")}</span>
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2" style={{ fontSize: 12 }}>
+                    <input
+                      type="checkbox"
+                      checked={challengesEnabled}
+                      onChange={(e) => setChallengesEnabled(e.target.checked)}
+                    />
+                    <span className="text-[#F5EAD4]">{t("التحديات النشطة", "Active challenges")}</span>
+                  </label>
                 </div>
                 <div className="flex justify-between gap-2">
                   <span className="text-muted-foreground">{t("واتساب", "WhatsApp")}</span>

@@ -114,6 +114,21 @@ For setup steps, see:
 
 ## Deployment
 
+### GitHub Pages (تلقائي عند الدفع إلى `main`)
+
+Workflow: [`.github/workflows/deploy-github-pages.yml`](./.github/workflows/deploy-github-pages.yml).
+
+1. على GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. على GitHub: **Settings → Secrets and variables → Actions** وأضف الأسرار التالية (نفس قيم `.env` المحلي) حتى يُدمَج Supabase في الـ build:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_ADMIN_EMAIL` و `VITE_ADMIN_PASSWORD` (اختياري لكنه مفيد لتسجيل دخول الطاقم من الواجهة المنشورة)
+3. ادفع إلى فرع `main`؛ بعد نجاح الـ workflow يكون الموقع على:  
+   `https://<اسم-الحساب>.github.io/royal_fitness_admin/`  
+   (المسار يتبع اسم المستودع تلقائياً عبر `VITE_BASE_PATH`.)
+
+### Firebase (ملفات إعداد)
+
 The repository includes Firebase configuration files:
 - `firebase.json`
 - `firestore.rules`

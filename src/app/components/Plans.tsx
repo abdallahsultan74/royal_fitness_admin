@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Save, Trash2, UserMinus, Users } from "lucide-react";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
+import { PlanJsonEditor, normalizePlanJson, serializePlanJson, type PlanJsonDraft } from "./PlanJsonEditor";
 
 type PlanRow = {
   id: string;
@@ -40,6 +41,7 @@ export function Plans() {
   const [desc, setDesc] = useState("");
   const [level, setLevel] = useState("beginner");
   const [weeks, setWeeks] = useState(4);
+  const [jsonDraft, setJsonDraft] = useState<PlanJsonDraft>({ slots: [] });
 
   // assignment
   const [assignOpen, setAssignOpen] = useState(false);
@@ -56,6 +58,7 @@ export function Plans() {
     setDesc("");
     setLevel("beginner");
     setWeeks(4);
+    setJsonDraft({ slots: [] });
   };
 
   const loadPlans = useCallback(async () => {
@@ -158,6 +161,7 @@ export function Plans() {
 
   const openCreate = () => {
     resetForm();
+    setJsonDraft({ slots: [] });
     setOpenForm(true);
   };
 
@@ -167,6 +171,7 @@ export function Plans() {
     setDesc(p.description ?? "");
     setLevel(p.level ?? "beginner");
     setWeeks(Number(p.duration_weeks ?? 4));
+    setJsonDraft(normalizePlanJson(p.json_plan));
     setOpenForm(true);
   };
 
@@ -194,7 +199,7 @@ export function Plans() {
         description: desc.trim() || null,
         level,
         duration_weeks: Number.isFinite(weeks) ? weeks : 4,
-        json_plan: {},
+        json_plan: serializePlanJson(jsonDraft),
       };
       const resp = editing
         ? await db.from("training_plans").update(payload).eq("id", editing.id)
@@ -221,7 +226,9 @@ export function Plans() {
 
   const assignedUserIdsForOpenPlan = useMemo(() => {
     if (!assignPlan) return new Set<string>();
-    return new Set(assignments.filter((a) => a.plan_id === assignPlan.id).map((a) => a.user_id));
+    return new Set(
+      assignments.filter((a) => a.plan_id === assignPlan.id && a.status === "active").map((a) => a.user_id),
+    );
   }, [assignPlan, assignments]);
 
   const filteredUsers = useMemo(() => {
@@ -288,7 +295,7 @@ export function Plans() {
     try {
       const authed = await ensureStaffAuth();
       if (!authed) return;
-      const resp = await db.from("plan_assignments").delete().eq("id", assignmentId);
+      const resp = await db.from("plan_assignments").update({ status: "cancelled" }).eq("id", assignmentId);
       if (resp.error) {
         setAuthError(resp.error.message);
         return;
@@ -332,7 +339,14 @@ export function Plans() {
 
   const currentPlanAssignments = useMemo(() => {
     if (!assignPlan) return [];
-    return assignments.filter((a) => a.plan_id === assignPlan.id);
+    return assignments
+      .filter((a) => a.plan_id === assignPlan.id)
+      .sort((a, b) => {
+        if (a.status === b.status) return 0;
+        if (a.status === "active") return -1;
+        if (b.status === "active") return 1;
+        return 0;
+      });
   }, [assignPlan, assignments]);
 
   return (
@@ -384,7 +398,7 @@ export function Plans() {
             </thead>
             <tbody>
               {plans.map((p) => {
-                const forPlan = assignments.filter((a) => a.plan_id === p.id);
+                const forPlan = assignments.filter((a) => a.plan_id === p.id && a.status === "active");
                 const preview = forPlan
                   .slice(0, 2)
                   .map((a) => a.profile?.name || a.profile?.email || t("مستخدم", "User"))
@@ -518,6 +532,7 @@ export function Plans() {
                 />
               </div>
             </div>
+            <PlanJsonEditor value={jsonDraft} onChange={setJsonDraft} t={t} />
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
                 type="button"
@@ -583,10 +598,12 @@ export function Plans() {
                         <div className="truncate text-muted-foreground" style={{ fontSize: 12 }} dir="ltr">
                           {a.profile?.email || "—"}
                         </div>
+                        <div className="mt-0.5 text-[11px] uppercase text-muted-foreground">{a.status}</div>
                       </div>
                       <button
                         type="button"
                         onClick={() => removeAssignment(a.id)}
+                        disabled={a.status !== "active"}
                         disabled={saving}
                         className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-red-500/40 px-2 py-1.5 text-xs text-red-200 hover:bg-red-500/10 disabled:opacity-50"
                       >
