@@ -1,159 +1,109 @@
 # Royal Fitness Admin
 
-Admin dashboard for managing the Royal Fitness platform.
+Web-based admin dashboard for managing the Royal Fitness platform (users, subscriptions, exercises, challenges, plans, analytics, and notifications).
 
-This project is a React + Vite web app used by administrators to:
-- monitor key platform metrics,
-- manage users,
-- manage exercise content,
-- maintain core app settings.
+## Highlights
 
-The UI supports both English and Arabic, and can run in:
-- **Live mode** (Supabase connected), or
-- **Local demo mode** (no backend required).
+- Bilingual UI (English / Arabic)
+- Staff-only access (admin + coach roles via Supabase)
+- Live metrics backed by Supabase RPCs (no fake numbers)
+- Subscription pricing managed by staff and reflected in revenue analytics
+- Safe user deletion flows (soft delete via RPC + optional permanent delete via Edge Function)
 
----
+## Tech stack
 
-## Tech Stack
-
-- React 18
+- React 18 + TypeScript
 - Vite 6
-- TypeScript
-- Tailwind CSS 4
-- MUI + Radix UI components
-- Supabase (auth + database)
-- Firebase Hosting/Rules files (deployment/config support)
-
----
-
-## Current Modules
-
-- **Dashboard**: user, exercise, and revenue-style overview with activity chart.
-- **Exercise Management**: list, filter, create, edit, view, and delete exercises.
-- **User Management**: list/search users and update account status.
-- **Settings**: update admin-facing app settings.
-- **Auth**: admin login flow with protected routes.
-
-The following routes are present as placeholders and currently show **Coming soon**:
-- Subscriptions
-- Analytics
-- Support
-- Notifications
-
----
+- Tailwind CSS
+- Supabase (`@supabase/supabase-js`) for auth + database + RPC
+- Recharts for charts, jsPDF for exports (Analytics page)
 
 ## Prerequisites
 
 - Node.js 18+ (recommended)
 - npm
 
----
+## Setup
 
-## Getting Started
-
-1. Install dependencies:
+1) Install dependencies:
 
 ```bash
 npm install
 ```
 
-2. Create your environment file:
+2) Create `.env` from the template and set values:
 
 ```bash
 cp .env.example .env
 ```
 
-3. Update `.env` values (see Environment Variables below).
+Required for live mode:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
-4. Run the app locally:
+Optional (useful for demo/testing):
+- `VITE_LOCAL_AUTH=true` to force local/demo mode
+
+## Run locally
 
 ```bash
 npx vite
 ```
 
-5. Build for production:
+## Build for production
 
 ```bash
 npm run build
 ```
 
----
+Build output is created under `dist/`.
 
-## Environment Variables
+## Database setup (Supabase)
 
-Use `.env.example` as your reference:
-
-| Variable | Required | Description |
-| --- | --- | --- |
-| `VITE_SUPABASE_URL` | For live mode | Supabase project URL |
-| `VITE_SUPABASE_ANON_KEY` | For live mode | Supabase anon key |
-| `VITE_ADMIN_EMAIL` | Optional | Admin email used for programmatic auth fallback |
-| `VITE_ADMIN_PASSWORD` | Optional | Admin password used for programmatic auth fallback |
-| `VITE_LOCAL_AUTH` | Optional | Set to `true` to force local demo auth mode |
-| `VITE_FIREBASE_API_KEY` | Optional | Legacy/compat placeholder in env template |
-| `VITE_FIREBASE_AUTH_DOMAIN` | Optional | Legacy/compat placeholder in env template |
-| `VITE_FIREBASE_PROJECT_ID` | Optional | Legacy/compat placeholder in env template |
-| `VITE_FIREBASE_STORAGE_BUCKET` | Optional | Legacy/compat placeholder in env template |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Optional | Legacy/compat placeholder in env template |
-| `VITE_FIREBASE_APP_ID` | Optional | Legacy/compat placeholder in env template |
-
-If Supabase credentials are missing, the app falls back to local/demo behavior in key areas.
-
----
-
-## Database Setup (Supabase)
-
-Supabase migration and seed files are available under:
+Migrations and seed files live in:
 - `supabase/migrations/`
 - `supabase/seed.sql`
 
-For setup steps, see:
+Setup guide:
 - [`SUPABASE_SETUP.md`](./SUPABASE_SETUP.md)
-
----
 
 ## Deployment
 
-### GitHub Pages (تلقائي عند الدفع إلى `main`)
+### Vercel
 
-Workflow: [`.github/workflows/deploy-github-pages.yml`](./.github/workflows/deploy-github-pages.yml).
+This project can be deployed as a standard Vite app. Configure the same environment variables used locally (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) in the Vercel project settings.
 
-1. على GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-2. على GitHub: **Settings → Secrets and variables → Actions** وأضف الأسرار التالية (نفس قيم `.env` المحلي) حتى يُدمَج Supabase في الـ build:
+### GitHub Pages (via Actions)
+
+Workflow:
+- [`.github/workflows/deploy-github-pages.yml`](./.github/workflows/deploy-github-pages.yml)
+
+Steps:
+1) GitHub → Settings → Pages → Build and deployment → Source: GitHub Actions
+2) GitHub → Settings → Secrets and variables → Actions → add:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
-   - `VITE_ADMIN_EMAIL` و `VITE_ADMIN_PASSWORD` (اختياري لكنه مفيد لتسجيل دخول الطاقم من الواجهة المنشورة)
-3. ادفع إلى فرع `main`؛ بعد نجاح الـ workflow يكون الموقع على:  
-   `https://<اسم-الحساب>.github.io/royal_fitness_admin/`  
-   (المسار يتبع اسم المستودع تلقائياً عبر `VITE_BASE_PATH`.)
+3) Push to `main`. The site will be published under:
+   - `https://<account>.github.io/royal_fitness_admin/`
 
-### Firebase (ملفات إعداد)
+### Firebase hosting (optional)
 
-The repository includes Firebase configuration files:
+Firebase configuration files are included:
 - `firebase.json`
 - `firestore.rules`
 - `storage.rules`
 
-Production build output is generated in `dist/` and used by Firebase Hosting config.
+If you use Firebase Hosting, deploy the `dist/` output.
 
----
-
-## Project Structure
+## Project structure
 
 ```text
 src/
   app/
-    components/      # dashboard pages and shared app components
-    App.tsx          # app providers + router provider
+    components/      # pages + shared components
+    App.tsx          # providers + router
     routes.tsx       # route definitions
-    firebase.ts      # Supabase client/auth helpers
-  styles/            # global and theme styles
-  main.tsx           # application entry point
+    firebase.ts      # Supabase helpers (historical name)
+  styles/
+  main.tsx
 ```
-
----
-
-## Notes
-
-- This repository currently exposes only a `build` npm script.
-- For local development, use `npx vite` unless a `dev` script is added later.

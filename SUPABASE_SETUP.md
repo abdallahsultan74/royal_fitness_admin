@@ -1,43 +1,43 @@
 # Supabase Setup (Free Plan)
 
-هذا المشروع جاهز الآن بقاعدة بيانات Supabase كاملة (schema + RLS + seed) داخل:
+This project ships with a complete Supabase database setup (schema + RLS + seed) under:
 
 - `supabase/migrations/20260415111000_init_royal_fitness.sql`
 - `supabase/seed.sql`
 
-## 1) Login للـ Supabase CLI
+## 1) Login to the Supabase CLI
 
 ```bash
 npx supabase login
 ```
 
-بديل بدون المتصفح:
+Alternative (non-interactive) login using an access token:
 
 ```bash
 set SUPABASE_ACCESS_TOKEN=YOUR_TOKEN
 ```
 
-## 2) ربط المشروع بالـ Supabase Project
+## 2) Link the project to your Supabase project
 
 ```bash
 npx supabase link --project-ref thndmcqsjoejqnvfbnto
 ```
 
-## 3) تطبيق الـ Database schema + policies
+## 3) Apply database schema + policies
 
 ```bash
 npx supabase db push
 ```
 
-## 4) (اختياري) تشغيل seed data
+## 4) (Optional) Load seed data
 
 ```bash
 npx supabase db reset
 ```
 
-> `db reset` يعيد إنشاء القاعدة محليًا/مرتبطًا حسب السياق، فاستخدمه بحذر على بيانات موجودة.
+> `db reset` recreates the database (local or linked, depending on context). Use it carefully if you already have data.
 
-## بنية الجداول
+## Core tables (high level)
 
 - `public.profiles`
 - `public.exercises`
@@ -45,12 +45,12 @@ npx supabase db reset
 - `public.workout_session_items`
 - `public.daily_stats`
 
-## ملخص الأمان (RLS)
+## Security model (RLS overview)
 
-- المستخدم العادي يصل فقط لبياناته (`auth.uid()`).
-- الأدمن (claim: `app_metadata.admin = true`) له صلاحيات الإدارة.
-- `exercises` قراءة لكل مستخدم مسجل، وكتابة للأدمن فقط.
+- Standard users can access only their own data (`auth.uid()`).
+- Admin/staff capabilities are enforced via role/claims and security-definer RPCs where appropriate.
+- `exercises` are readable by authenticated users; write access is restricted to staff.
 
-## ملاحظة مهمة
+## Important note
 
-لا تضع `service_role` داخل تطبيق Flutter أو واجهة React. استخدمه فقط في سكربتات آمنة أو Functions.
+Never ship the `service_role` key in the Flutter app or the React admin panel. Use it only in secure server-side contexts (Edge Functions / trusted scripts).
