@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, getIsAdmin, hasFirebaseConfig } from "../firebase";
 import { normalizePlanKey, textMatchesQuery } from "../searchUtils";
+import { formatRelativeTime } from "../time";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -98,12 +99,7 @@ export function UserManagement() {
         const lastAt = lastLogRaw ? new Date(lastLogRaw) : null;
         const lastActive =
           lastAt && !Number.isNaN(lastAt.getTime())
-            ? new Intl.RelativeTimeFormat(lang === "ar" ? "ar" : "en", {
-                numeric: "auto",
-              }).format(
-                -Math.max(1, Math.round((Date.now() - lastAt.getTime()) / (1000 * 60))),
-                "minute",
-              )
+            ? formatRelativeTime(lastAt, lang === "ar" ? "ar" : "en")
             : lang === "ar"
               ? "الآن"
               : "Just now";
@@ -290,15 +286,46 @@ export function UserManagement() {
         setDeleteError(t("لا يمكن حذف حسابك الحالي.", "You cannot delete your current account."));
         return;
       }
-      const { error } = await db.rpc("api_staff_soft_delete_user", { p_user_id: u.id });
-      if (error) {
-        setDeleteError(error.message);
+      const sessionResp = await db.auth.getSession();
+      const token = sessionResp.data.session?.access_token;
+      if (!token) {
+        setDeleteError(t("جلسة الدخول غير صالحة.", "Invalid session."));
+        return;
+      }
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+      if (!supabaseUrl || !supabaseAnonKey) {
+        setDeleteError("Missing Supabase env");
+        return;
+      }
+
+      const delResp = await fetch(`${supabaseUrl}/functions/v1/delete-user`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          apikey: supabaseAnonKey,
+        },
+        body: JSON.stringify({ user_id: u.id }),
+      });
+      const text = await delResp.text();
+      if (!delResp.ok) {
+        let reason = text;
+        try {
+          const j = JSON.parse(text) as { error?: string; details?: unknown };
+          reason = j?.error ? j.error : text;
+          if (j?.details) reason = `${reason} (${JSON.stringify(j.details)})`;
+        } catch {
+          /* ignore */
+        }
+        setDeleteError(`${t("فشل الحذف", "Delete failed")}: ${delResp.status} ${reason}`);
         return;
       }
       // Refresh list after delete.
-      const resp = await db.rpc("api_admin_user_progress_summary");
-      if (!resp.error) {
-        const rows = resp.data ?? [];
+      const listResp = await db.rpc("api_admin_user_progress_summary");
+      if (!listResp.error) {
+        const rows = listResp.data ?? [];
         const mapped = rows.map((data: any, idx: number) => {
           const fallbackName = lang === "ar" ? "مستخدم" : "User";
           const status = data.status?.toString() ?? (lang === "ar" ? "نشط" : "Active");
@@ -317,12 +344,7 @@ export function UserManagement() {
           const lastAt = lastLogRaw ? new Date(lastLogRaw) : null;
           const lastActive =
             lastAt && !Number.isNaN(lastAt.getTime())
-              ? new Intl.RelativeTimeFormat(lang === "ar" ? "ar" : "en", {
-                  numeric: "auto",
-                }).format(
-                  -Math.max(1, Math.round((Date.now() - lastAt.getTime()) / (1000 * 60))),
-                  "minute",
-                )
+              ? formatRelativeTime(lastAt, lang === "ar" ? "ar" : "en")
               : lang === "ar"
                 ? "الآن"
                 : "Just now";

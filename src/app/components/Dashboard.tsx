@@ -26,6 +26,7 @@ import {
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
 import { useNavigate } from "react-router";
+import { formatRelativeTime } from "../time";
 
 export function Dashboard() {
   const { t, isRTL } = useLang();
@@ -164,15 +165,13 @@ export function Dashboard() {
 
       const sortedUsers = [...users].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       const now = Date.now();
-      const formatter = new Intl.RelativeTimeFormat(isRTL ? "ar" : "en", { numeric: "auto" });
       setRecentUsers(
         sortedUsers.slice(0, 5).map((user) => {
-          const minutesAgo = Math.max(1, Math.round((now - user.createdAt.getTime()) / (1000 * 60)));
           return {
             id: user.id,
             name: user.name,
             plan: user.plan,
-            time: formatter.format(-minutesAgo, "minute"),
+            time: formatRelativeTime(user.createdAt, isRTL ? "ar" : "en", now),
           };
         }),
       );
