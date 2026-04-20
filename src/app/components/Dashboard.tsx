@@ -33,6 +33,7 @@ export function Dashboard() {
   const [usersCount, setUsersCount] = useState<number | null>(null);
   const [exercisesCount, setExercisesCount] = useState<number | null>(null);
   const [revenue, setRevenue] = useState<number | null>(null);
+  const [revenueCurrency, setRevenueCurrency] = useState<string>("EGP");
   const [recentUsers, setRecentUsers] = useState<{ id?: string; name: string; plan: string; time: string }[]>([]);
   // Activity details are now shown on a dedicated user details page.
   const [chartData, setChartData] = useState<{ month: string; users: number; revenue: number }[]>([]);
@@ -57,6 +58,20 @@ export function Dashboard() {
 
     const loadDashboard = async () => {
       if (!db) return;
+      const dashResp = await db.rpc("api_admin_dashboard_metrics", { p_days: 30 });
+      if (dashResp.error) {
+        console.error("[Dashboard] api_admin_dashboard_metrics", dashResp.error);
+      } else {
+        const row = Array.isArray(dashResp.data) ? dashResp.data[0] : dashResp.data;
+        const revCents = Number(row?.revenue_cents ?? 0) || 0;
+        setRevenue(revCents / 100);
+        setRevenueCurrency(String(row?.currency ?? "EGP") || "EGP");
+        if (typeof row?.total_users === "number") setUsersCount(row.total_users);
+        if (typeof row?.pending_subscription_requests === "number") {
+          setPendingRequests(row.pending_subscription_requests);
+        }
+      }
+
       const usersResp = await db.from("profiles").select("*");
       if (usersResp.error) {
         console.error("[Dashboard] profiles", usersResp.error);
@@ -145,13 +160,7 @@ export function Dashboard() {
         setActivePlanAssignments(assignmentsCountResp.count ?? 0);
       }
 
-      const revenueTotal = users.reduce((sum, user) => {
-        const plan = String(user.plan).toLowerCase();
-        if (plan.includes("pro") || plan.includes("premium") || plan.includes("بريميوم")) return sum + 49;
-        if (plan.includes("basic") || plan.includes("أساسي")) return sum + 19;
-        return sum;
-      }, 0);
-      setRevenue(revenueTotal);
+      // Revenue is computed server-side based on admin/coach plan prices.
 
       const sortedUsers = [...users].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       const now = Date.now();
@@ -184,10 +193,33 @@ export function Dashboard() {
         const bucket = buckets.find((item) => item.key === key);
         if (!bucket) return;
         bucket.users += 1;
-        const plan = String(user.plan).toLowerCase();
-        if (plan.includes("pro") || plan.includes("premium") || plan.includes("بريميوم")) bucket.revenue += 49;
-        else if (plan.includes("basic") || plan.includes("أساسي")) bucket.revenue += 19;
       });
+
+      // Revenue trend: sum approved subscription_requests by month (uses stored price at approval).
+      const start = new Date();
+      start.setMonth(start.getMonth() - 5);
+      start.setDate(1);
+      start.setHours(0, 0, 0, 0);
+      const revResp = await db
+        .from("subscription_requests")
+        .select("approved_at, price_cents")
+        .eq("status", "approved")
+        .gte("approved_at", start.toISOString());
+      if (revResp.error) {
+        console.error("[Dashboard] subscription_requests revenue trend", revResp.error);
+      } else {
+        const revRows = (revResp.data ?? []) as any[];
+        revRows.forEach((r) => {
+          const atRaw = r.approved_at?.toString();
+          if (!atRaw) return;
+          const at = new Date(atRaw);
+          if (Number.isNaN(at.getTime())) return;
+          const key = `${at.getFullYear()}-${at.getMonth()}`;
+          const bucket = buckets.find((b) => b.key === key);
+          if (!bucket) return;
+          bucket.revenue += (Number(r.price_cents ?? 0) || 0) / 100;
+        });
+      }
 
       setChartData(
         buckets.map((bucket) => ({
@@ -269,14 +301,23 @@ export function Dashboard() {
     [t],
   );
 
+  const revenueLabel = useMemo(() => {
+    const nf = new Intl.NumberFormat(isRTL ? "ar" : "en", {
+      maximumFractionDigits: 2,
+    });
+    const v = revenue ?? 0;
+    const cur = (revenueCurrency || "EGP").toUpperCase();
+    return `${nf.format(v)} ${cur}`;
+  }, [isRTL, revenue, revenueCurrency]);
+
   const metrics = [
-    { label: t("إجمالي المستخدمين", "Total Users"), value: usersCount ?? 12847, change: t("مباشر", "Live"), up: true, icon: Users },
-    { label: t("إيرادات الاشتراكات", "Subscription Revenue"), value: `$${revenue ?? 48290}`, change: t("تقديري", "Estimated"), up: true, icon: DollarSign },
-    { label: t("التمارين النشطة", "Active Exercises"), value: exercisesCount ?? 34, change: t("مباشر", "Live"), up: true, icon: Trophy },
-    { label: t("طلبات الاشتراك", "Subscription Requests"), value: pendingRequests ?? 0, change: t("قيد المراجعة", "Pending"), up: false, icon: AlertTriangle },
-    { label: t("متوسط BMI", "Average BMI"), value: avgBmi ?? "--", change: t("صحي", "Health"), up: true, icon: TrendingUp },
-    { label: t("تحديثات وزن اليوم", "Today's weight logs"), value: todayWeightLogs ?? 0, change: t("مباشر", "Live"), up: true, icon: TrendingUp },
-    { label: t("تحديات نشطة", "Active challenges"), value: activeChallenges ?? 0, change: t("30 يوم", "30-day"), up: true, icon: Trophy },
+    { label: t("إجمالي المستخدمين", "Total Users"), value: usersCount ?? 12847, change: t("مباشر", "Live"), up: true, icon: Users, href: "/users" },
+    { label: t("إيرادات الاشتراكات", "Subscription Revenue"), value: revenue != null ? revenueLabel : `$${revenue ?? 48290}`, change: t("حقيقي", "Actual"), up: true, icon: DollarSign, href: "/subscriptions" },
+    { label: t("التمارين النشطة", "Active Exercises"), value: exercisesCount ?? 34, change: t("مباشر", "Live"), up: true, icon: Trophy, href: "/exercises" },
+    { label: t("طلبات الاشتراك", "Subscription Requests"), value: pendingRequests ?? 0, change: t("قيد المراجعة", "Pending"), up: false, icon: AlertTriangle, href: "/subscriptions" },
+    { label: t("متوسط BMI", "Average BMI"), value: avgBmi ?? "--", change: t("صحي", "Health"), up: true, icon: TrendingUp, href: "/users" },
+    { label: t("تحديثات وزن اليوم", "Today's weight logs"), value: todayWeightLogs ?? 0, change: t("مباشر", "Live"), up: true, icon: TrendingUp, href: "/users" },
+    { label: t("تحديات نشطة", "Active challenges"), value: activeChallenges ?? 0, change: t("30 يوم", "30-day"), up: true, icon: Trophy, href: "/challenges" },
   ];
   const tableRecentUsers = recentUsers.length ? recentUsers : fallbackRecentUsers;
   const renderedChartData = chartData.length ? chartData : fallbackChartData;
@@ -303,8 +344,12 @@ export function Dashboard() {
       {/* Metric Cards */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
         {metrics.map((m) => (
-          <div
+          <button
             key={m.label}
+            type="button"
+            onClick={() => {
+              if ("href" in m && m.href) navigate(m.href);
+            }}
             className="relative overflow-hidden rounded-xl border border-border bg-card p-4 transition-all hover:border-[#D4AF37]/30 hover:shadow-[0_0_20px_rgba(212,175,55,0.05)] sm:p-5"
           >
             <div className="flex items-start justify-between gap-2">
@@ -329,7 +374,7 @@ export function Dashboard() {
                 {t("مقارنة بالشهر الماضي", "vs last month")}
               </span>
             </div>
-          </div>
+          </button>
         ))}
       </div>
 

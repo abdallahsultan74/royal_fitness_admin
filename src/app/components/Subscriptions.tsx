@@ -20,10 +20,12 @@ type Subscription = {
   plan: string;
   status: string;
   amount: number;
+  currency?: string;
   renewDate: string;
   note?: string;
   kind: "activate" | "renew";
   durationDays: number;
+  approvedAt?: string;
 };
 
 const fallbackSubscriptions: Subscription[] = [
@@ -44,6 +46,13 @@ export function Subscriptions() {
   const loadRequestsRef = useRef<(() => Promise<void>) | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Subscription | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [pricesByKey, setPricesByKey] = useState<Record<string, { priceCents: number; currency: string }>>({});
+  const [metricsRevenue, setMetricsRevenue] = useState<{ value: number; currency: string } | null>(null);
+  const [pricePlanKey, setPricePlanKey] = useState("pro");
+  const [priceDurationDays, setPriceDurationDays] = useState(30);
+  const [priceCurrency, setPriceCurrency] = useState("EGP");
+  const [priceAmount, setPriceAmount] = useState<number>(0);
+  const [priceSaving, setPriceSaving] = useState(false);
 
   useEffect(() => {
     if (!db || !hasFirebaseConfig) {
@@ -60,9 +69,44 @@ export function Subscriptions() {
 
     const loadRequests = async () => {
       try {
+        let localPricesByKey: Record<string, { priceCents: number; currency: string }> = {};
+        const pricesResp = await db.rpc("api_list_subscription_prices");
+        if (pricesResp.error) {
+          console.error("[Subscriptions] api_list_subscription_prices error", pricesResp.error);
+        } else {
+          const m: Record<string, { priceCents: number; currency: string }> = {};
+          const rows = (pricesResp.data ?? []) as any[];
+          rows.forEach((r) => {
+            const planKey = String(r.plan_key ?? "").toLowerCase();
+            const dur = Number(r.duration_days ?? 30) || 30;
+            const active = Boolean(r.active);
+            if (!planKey || !active) return;
+            const key = `${planKey}:${dur}`;
+            m[key] = {
+              priceCents: Number(r.price_cents ?? 0) || 0,
+              currency: String(r.currency ?? "EGP") || "EGP",
+            };
+          });
+          setPricesByKey(m);
+          localPricesByKey = m;
+          const defaultKey = `${pricePlanKey.toLowerCase()}:${priceDurationDays}`;
+          const def = m[defaultKey];
+          if (def && (priceAmount === 0 || Number.isNaN(priceAmount))) {
+            setPriceAmount(def.priceCents / 100);
+            setPriceCurrency(def.currency);
+          }
+        }
+
+        const metricsResp = await db.rpc("api_admin_dashboard_metrics", { p_days: 30 });
+        if (!metricsResp.error) {
+          const row = Array.isArray(metricsResp.data) ? metricsResp.data[0] : metricsResp.data;
+          const revCents = Number(row?.revenue_cents ?? 0) || 0;
+          setMetricsRevenue({ value: revCents / 100, currency: String(row?.currency ?? "EGP") || "EGP" });
+        }
+
         const resp = await db
           .from("subscription_requests")
-          .select("id, requested_plan, status, created_at, note, user_id, request_kind, duration_days")
+          .select("id, requested_plan, status, created_at, note, user_id, request_kind, duration_days, price_cents, currency, approved_at")
           .order("created_at", { ascending: false });
         // Important: supabase-js does not always throw on permission errors.
         if (resp.error) {
@@ -103,6 +147,12 @@ export function Subscriptions() {
         const mapped: Subscription[] = rows.map((data) => {
           const uid = data.user_id?.toString();
           const prof = uid ? profilesById.get(uid) : null;
+          const planKey = (data.requested_plan?.toString() ?? "pro").toLowerCase();
+          const dur = Number(data.duration_days ?? 30) || 30;
+          const priceKey = `${planKey}:${dur}`;
+          const planPrice = localPricesByKey[priceKey];
+          const cents = Number(data.price_cents ?? (planPrice?.priceCents ?? 0)) || 0;
+          const cur = String(data.currency ?? (planPrice?.currency ?? "EGP")) || "EGP";
           return {
             id: data.id,
             userId: uid ?? "",
@@ -110,11 +160,13 @@ export function Subscriptions() {
             userEmail: prof?.email?.toString() ?? "unknown@email.com",
             plan: data.requested_plan?.toString() ?? "Pro",
             status: data.status?.toString() ?? "pending",
-            amount: (data.requested_plan?.toString().toLowerCase().includes("basic") ? 19 : 49),
+            amount: cents > 0 ? cents / 100 : (planKey.includes("basic") ? 19 : 49),
+            currency: cur,
             renewDate: data.created_at?.toString() ?? new Date().toISOString(),
             note: data.note?.toString(),
             kind: (String(data.request_kind ?? "activate").toLowerCase() === "renew" ? "renew" : "activate"),
-            durationDays: Number(data.duration_days ?? 30) || 30,
+            durationDays: dur,
+            approvedAt: data.approved_at?.toString(),
           };
         });
 
@@ -227,10 +279,17 @@ export function Subscriptions() {
     };
   }, [localizedFallback, t]);
 
-  const totalRevenue = useMemo(
-    () => subscriptions.filter((s) => s.status === "active").reduce((sum, s) => sum + s.amount, 0),
-    [subscriptions],
-  );
+  const totalRevenueLabel = useMemo(() => {
+    if (metricsRevenue) {
+      return `${metricsRevenue.value.toLocaleString(lang === "ar" ? "ar-EG" : "en-US", {
+        maximumFractionDigits: 2,
+      })} ${(metricsRevenue.currency || "EGP").toUpperCase()}`;
+    }
+    const sum = subscriptions
+      .filter((s) => s.status === "approved" || s.status === "active")
+      .reduce((acc, s) => acc + (Number(s.amount) || 0), 0);
+    return `${sum.toLocaleString(lang === "ar" ? "ar-EG" : "en-US")} EGP`;
+  }, [lang, metricsRevenue, subscriptions]);
 
   const formatPlan = (plan: string) => {
     const normalized = plan.toLowerCase();
@@ -325,6 +384,50 @@ export function Subscriptions() {
     }
   };
 
+  const savePlanPrice = async () => {
+    if (!db || !hasFirebaseConfig) return;
+    const planKey = (pricePlanKey || "").trim().toLowerCase();
+    const durationDays = Number(priceDurationDays) || 30;
+    const currency = (priceCurrency || "EGP").trim().toUpperCase();
+    const cents = Math.max(0, Math.round((Number(priceAmount) || 0) * 100));
+    if (!planKey) return;
+
+    setPriceSaving(true);
+    setAuthError(null);
+    try {
+      await ensureStaffAuth();
+      // Deactivate existing active record (if any), then insert the new active price.
+      await db
+        .from("subscription_plan_prices")
+        .update({ active: false })
+        .eq("plan_key", planKey)
+        .eq("duration_days", durationDays)
+        .eq("active", true);
+
+      const session = await db.auth.getSession();
+      const setBy = session.data.session?.user?.id ?? null;
+
+      const { error } = await db.from("subscription_plan_prices").insert({
+        plan_key: planKey,
+        duration_days: durationDays,
+        price_cents: cents,
+        currency,
+        active: true,
+        set_by: setBy,
+      });
+      if (error) {
+        setAuthError(error.message);
+        return;
+      }
+      // Refresh
+      await loadRequestsRef.current?.();
+    } catch (e) {
+      setAuthError((e as Error)?.message ?? "Failed to save plan price.");
+    } finally {
+      setPriceSaving(false);
+    }
+  };
+
   const requestDelete = (item: Subscription) => {
     setDeleteTarget(item);
   };
@@ -395,7 +498,81 @@ export function Subscriptions() {
         </div>
         <div className="rounded-xl border border-border bg-card p-4">
           <p className="text-muted-foreground" style={{ fontSize: 12 }}>{t("إيراد شهري تقديري", "Estimated monthly revenue")}</p>
-          <p className="text-[#D4AF37]" style={{ fontSize: 24, fontWeight: 600 }}>${totalRevenue}</p>
+          <p className="text-[#D4AF37]" style={{ fontSize: 24, fontWeight: 600 }}>{totalRevenueLabel}</p>
+        </div>
+      </div>
+
+      <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-[#F5EAD4]" style={{ fontSize: 15, fontWeight: 700 }}>
+            {t("تسعير الاشتراكات (يحدده الأدمن/المدرب)", "Subscription pricing (admin/coach)")}
+          </h2>
+          <p className="text-muted-foreground" style={{ fontSize: 12 }}>
+            {t("السعر المستخدم في الإيرادات يتم حفظه وقت الموافقة على الطلب.", "Revenue uses the price stored at approval time.")}
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <label className="space-y-1">
+            <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("الخطة", "Plan key")}</span>
+            <input
+              value={pricePlanKey}
+              onChange={(e) => setPricePlanKey(e.target.value)}
+              className="w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4]"
+              style={{ fontSize: 13 }}
+              placeholder="pro"
+              dir="ltr"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("المدة (أيام)", "Duration (days)")}</span>
+            <input
+              value={priceDurationDays}
+              onChange={(e) => setPriceDurationDays(Number(e.target.value) || 30)}
+              className="w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4]"
+              style={{ fontSize: 13 }}
+              type="number"
+              min={1}
+              dir="ltr"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("العملة", "Currency")}</span>
+            <input
+              value={priceCurrency}
+              onChange={(e) => setPriceCurrency(e.target.value)}
+              className="w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4]"
+              style={{ fontSize: 13 }}
+              placeholder="EGP"
+              dir="ltr"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("السعر", "Price")}</span>
+            <input
+              value={priceAmount}
+              onChange={(e) => setPriceAmount(Number(e.target.value) || 0)}
+              className="w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4]"
+              style={{ fontSize: 13 }}
+              type="number"
+              min={0}
+              step={0.5}
+              dir="ltr"
+            />
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={!live || !db || !hasFirebaseConfig || priceSaving}
+            onClick={() => void savePlanPrice()}
+            className="inline-flex items-center justify-center rounded-lg bg-[#D4AF37] px-4 py-2 text-[#0B1B14] hover:brightness-110 disabled:opacity-60"
+            style={{ fontSize: 13, fontWeight: 800 }}
+          >
+            {priceSaving ? t("جارٍ الحفظ…", "Saving…") : t("حفظ السعر", "Save price")}
+          </button>
+          <span className="text-muted-foreground" style={{ fontSize: 12 }}>
+            {t("مثال مفاتيح الخطط: pro / basic / trial", "Example keys: pro / basic / trial")}
+          </span>
         </div>
       </div>
 
@@ -422,7 +599,10 @@ export function Subscriptions() {
                     {formatStatus(s.status)}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">${s.amount}</td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {s.amount.toLocaleString(lang === "ar" ? "ar-EG" : "en-US", { maximumFractionDigits: 2 })}{" "}
+                  {(s.currency || metricsRevenue?.currency || "EGP").toUpperCase()}
+                </td>
                 <td className="px-4 py-3 text-muted-foreground">
                   {new Date(s.renewDate).toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US")}
                 </td>

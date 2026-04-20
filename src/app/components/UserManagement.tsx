@@ -1,9 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, MoreHorizontal, Shield, ShieldOff, Mail, Eye, UserPlus } from "lucide-react";
+import { Search, MoreHorizontal, Shield, ShieldOff, Mail, Eye, UserPlus, Trash2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, getIsAdmin, hasFirebaseConfig } from "../firebase";
 import { normalizePlanKey, textMatchesQuery } from "../searchUtils";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
 
 const usersFallback = {
   ar: [
@@ -51,6 +60,11 @@ export function UserManagement() {
   const [staffCreating, setStaffCreating] = useState(false);
   const [staffError, setStaffError] = useState<string | null>(null);
   const [isAdminUser, setIsAdminUser] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   // Activity details are now shown on a dedicated user details page.
 
   useEffect(() => {
@@ -122,6 +136,8 @@ export function UserManagement() {
         return;
       }
       setIsAdminUser(await getIsAdmin());
+      const session = await db.auth.getSession();
+      setCurrentUserId(session.data.session?.user?.id ?? null);
       loadUsers();
       channel = db
         .channel("profiles-live-users")
@@ -249,6 +265,91 @@ export function UserManagement() {
       );
     } finally {
       setPendingId(null);
+    }
+  };
+
+  const requestDeleteUser = (u: any) => {
+    setDeleteError(null);
+    setDeleteTarget(u);
+  };
+
+  const confirmDeleteUser = async () => {
+    const u = deleteTarget;
+    if (!u || !db || !hasFirebaseConfig || typeof u.id !== "string") return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    setPendingDeleteId(u.id);
+    try {
+      await ensureStaffAuth();
+      const role = String(u.role ?? "user").toLowerCase();
+      if ((role === "admin" || role === "coach") && !isAdminUser) {
+        setDeleteError(t("لا يمكنك حذف مدرب/أدمن. اطلب من أدمن.", "You cannot delete staff. Ask an admin."));
+        return;
+      }
+      if (currentUserId && currentUserId === u.id) {
+        setDeleteError(t("لا يمكن حذف حسابك الحالي.", "You cannot delete your current account."));
+        return;
+      }
+      const { error } = await db.rpc("api_staff_soft_delete_user", { p_user_id: u.id });
+      if (error) {
+        setDeleteError(error.message);
+        return;
+      }
+      // Refresh list after delete.
+      const resp = await db.rpc("api_admin_user_progress_summary");
+      if (!resp.error) {
+        const rows = resp.data ?? [];
+        const mapped = rows.map((data: any, idx: number) => {
+          const fallbackName = lang === "ar" ? "مستخدم" : "User";
+          const status = data.status?.toString() ?? (lang === "ar" ? "نشط" : "Active");
+          const role2 = data.role?.toString() ?? "user";
+          const plan = data.plan?.toString() ?? (lang === "ar" ? "تجريبي" : "Trial");
+          const name = data.name?.toString() ?? `${fallbackName} ${idx + 1}`;
+          const email = data.email?.toString() ?? "unknown@email.com";
+          const initials = name
+            .split(" ")
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((part: string) => part[0])
+            .join("")
+            .toUpperCase();
+          const lastLogRaw = data.last_weight_log_at?.toString();
+          const lastAt = lastLogRaw ? new Date(lastLogRaw) : null;
+          const lastActive =
+            lastAt && !Number.isNaN(lastAt.getTime())
+              ? new Intl.RelativeTimeFormat(lang === "ar" ? "ar" : "en", {
+                  numeric: "auto",
+                }).format(
+                  -Math.max(1, Math.round((Date.now() - lastAt.getTime()) / (1000 * 60))),
+                  "minute",
+                )
+              : lang === "ar"
+                ? "الآن"
+                : "Just now";
+          return {
+            id: data.user_id,
+            name,
+            email,
+            plan,
+            role: role2,
+            weight: data.current_weight_kg,
+            bmi: data.bmi,
+            targetWeight: data.target_weight_kg,
+            challenge: data.active_challenge_title,
+            challengeDay: data.challenge_current_day,
+            lastActive,
+            status,
+            initials: initials || (lang === "ar" ? "مس" : "US"),
+          };
+        });
+        setUsers(mapped);
+      }
+      setDeleteTarget(null);
+    } catch (e: any) {
+      setDeleteError(e?.message ? String(e.message) : String(e));
+    } finally {
+      setDeleteBusy(false);
+      setPendingDeleteId(null);
     }
   };
 
@@ -576,6 +677,17 @@ export function UserManagement() {
                     >
                       {isActiveStatus(u.status) ? <ShieldOff className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
                     </button>
+                    {live && typeof u.id === "string" ? (
+                      <button
+                        type="button"
+                        onClick={() => requestDeleteUser(u)}
+                        disabled={pendingDeleteId === u.id}
+                        className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-red-400 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={t("حذف المستخدم", "Delete user")}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    ) : null}
                     <button type="button" className="cursor-pointer rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-[#F5EAD4]">
                       <MoreHorizontal className="h-4 w-4" />
                     </button>
@@ -592,6 +704,50 @@ export function UserManagement() {
           </div>
         )}
       </div>
+
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && !deleteBusy && setDeleteTarget(null)}>
+        <AlertDialogContent className="border-border bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-[#F5EAD4]">
+              {t("تأكيد حذف المستخدم", "Confirm delete user")}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  {t(
+                    "سيتم حذف بيانات المستخدم من النظام (Soft delete) ولن يتمكن من استخدام التطبيق. لا يمكن التراجع بسهولة.",
+                    "User will be removed (soft delete) and cannot use the app. This is not easily reversible.",
+                  )}
+                </p>
+                {deleteTarget ? (
+                  <p className="text-[#F5EAD4]" style={{ fontSize: 13 }}>
+                    <span className="font-medium">{deleteTarget.name}</span>
+                    <span className="text-muted-foreground"> · {deleteTarget.email}</span>
+                  </p>
+                ) : null}
+                {deleteError ? (
+                  <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-red-200" style={{ fontSize: 12 }}>
+                    {deleteError}
+                  </div>
+                ) : null}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteBusy} className="border-border">
+              {t("إلغاء", "Cancel")}
+            </AlertDialogCancel>
+            <button
+              type="button"
+              disabled={deleteBusy}
+              onClick={() => void confirmDeleteUser()}
+              className="inline-flex h-9 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:pointer-events-none disabled:opacity-50"
+            >
+              {deleteBusy ? t("جارٍ الحذف…", "Deleting…") : t("حذف", "Delete")}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
