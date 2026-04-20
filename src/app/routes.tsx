@@ -9,6 +9,7 @@ import { SettingsPage } from "./components/SettingsPage";
 import { Subscriptions } from "./components/Subscriptions";
 import { Notifications } from "./components/Notifications";
 import { ChallengesManagement } from "./components/ChallengesManagement";
+import { AnalyticsPage } from "./components/AnalyticsPage";
 import { Login } from "./components/Login";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
@@ -52,7 +53,7 @@ export const router = createBrowserRouter([
       { path: "plans", Component: Plans },
       { path: "challenges", Component: ChallengesManagement },
       { path: "subscriptions", Component: Subscriptions },
-      { path: "analytics", Component: ComingSoon },
+      { path: "analytics", Component: AnalyticsPage },
       { path: "support", Component: ComingSoon },
       { path: "settings", Component: SettingsPage },
       { path: "notifications", Component: Notifications },
