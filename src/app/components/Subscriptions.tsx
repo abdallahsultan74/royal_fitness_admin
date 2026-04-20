@@ -26,6 +26,8 @@ type Subscription = {
   kind: "activate" | "renew";
   durationDays: number;
   approvedAt?: string;
+  preferredCoachId?: string;
+  preferredCoachName?: string;
 };
 
 const fallbackSubscriptions: Subscription[] = [
@@ -106,7 +108,7 @@ export function Subscriptions() {
 
         const resp = await db
           .from("subscription_requests")
-          .select("id, requested_plan, status, created_at, note, user_id, request_kind, duration_days, price_cents, currency, approved_at")
+          .select("id, requested_plan, status, created_at, note, user_id, request_kind, duration_days, price_cents, currency, approved_at, preferred_coach_id")
           .order("created_at", { ascending: false });
         // Important: supabase-js does not always throw on permission errors.
         if (resp.error) {
@@ -127,6 +129,9 @@ export function Subscriptions() {
         const userIds = Array.from(
           new Set(rows.map((r) => r.user_id).filter((v) => v !== null && v !== undefined).map((v) => v.toString())),
         );
+        const coachIds = Array.from(
+          new Set(rows.map((r) => r.preferred_coach_id).filter((v) => v !== null && v !== undefined).map((v) => v.toString())),
+        );
 
         let profilesById = new Map<string, any>();
         if (userIds.length > 0) {
@@ -141,6 +146,18 @@ export function Subscriptions() {
           } else {
             const profiles = (profilesResp.data ?? []) as any[];
             profilesById = new Map(profiles.map((p) => [p.id?.toString(), p]));
+          }
+        }
+
+        let coachesById = new Map<string, any>();
+        if (coachIds.length > 0) {
+          const coachesResp = await db
+            .from("profiles")
+            .select("id, name")
+            .in("id", coachIds);
+          if (!coachesResp.error) {
+            const coaches = (coachesResp.data ?? []) as any[];
+            coachesById = new Map(coaches.map((p) => [p.id?.toString(), p]));
           }
         }
 
@@ -167,6 +184,8 @@ export function Subscriptions() {
             kind: (String(data.request_kind ?? "activate").toLowerCase() === "renew" ? "renew" : "activate"),
             durationDays: dur,
             approvedAt: data.approved_at?.toString(),
+            preferredCoachId: data.preferred_coach_id?.toString(),
+            preferredCoachName: data.preferred_coach_id ? (coachesById.get(String(data.preferred_coach_id))?.name?.toString() ?? undefined) : undefined,
           };
         });
 
@@ -581,7 +600,7 @@ export function Subscriptions() {
           <table className="w-full min-w-[640px]">
           <thead>
             <tr className="border-b border-border">
-              {[t("المستخدم", "User"), t("الخطة", "Plan"), t("الحالة", "Status"), t("المبلغ", "Amount"), t("التجديد", "Renew"), t("إجراءات", "Actions")].map((h) => (
+              {[t("المستخدم", "User"), t("الخطة", "Plan"), t("الحالة", "Status"), t("المبلغ", "Amount"), t("المدرب", "Coach"), t("التجديد", "Renew"), t("إجراءات", "Actions")].map((h) => (
                 <th key={h} className="px-4 py-3 text-start text-muted-foreground" style={{ fontSize: 12, fontWeight: 500 }}>{h}</th>
               ))}
             </tr>
@@ -602,6 +621,9 @@ export function Subscriptions() {
                 <td className="px-4 py-3 text-muted-foreground">
                   {s.amount.toLocaleString(lang === "ar" ? "ar-EG" : "en-US", { maximumFractionDigits: 2 })}{" "}
                   {(s.currency || metricsRevenue?.currency || "EGP").toUpperCase()}
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {s.preferredCoachName ?? (s.preferredCoachId ? t("مدرب", "Coach") : "—")}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
                   {new Date(s.renewDate).toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US")}

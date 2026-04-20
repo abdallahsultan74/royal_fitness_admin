@@ -54,7 +54,6 @@ export const router = createBrowserRouter([
       { path: "challenges", Component: ChallengesManagement },
       { path: "subscriptions", Component: Subscriptions },
       { path: "analytics", Component: AnalyticsPage },
-      { path: "support", Component: ComingSoon },
       { path: "settings", Component: SettingsPage },
       { path: "notifications", Component: Notifications },
     ],

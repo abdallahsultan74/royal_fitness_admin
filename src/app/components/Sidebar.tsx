@@ -11,7 +11,6 @@ import {
   ChevronsRight,
   Crown,
   BarChart3,
-  MessageSquare,
   CreditCard,
 } from "lucide-react";
 import { useLang } from "./LanguageContext";
@@ -24,7 +23,6 @@ const navItems = [
   { to: "/challenges", icon: Trophy, ar: "التحديات", en: "Challenges" },
   { to: "/subscriptions", icon: CreditCard, ar: "الاشتراكات", en: "Subscriptions" },
   { to: "/analytics", icon: BarChart3, ar: "التحليلات", en: "Analytics" },
-  { to: "/support", icon: MessageSquare, ar: "الدعم الفني", en: "Support" },
   { to: "/settings", icon: Settings, ar: "الإعدادات", en: "Settings" },
 ];
 
