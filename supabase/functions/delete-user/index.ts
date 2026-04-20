@@ -78,13 +78,21 @@ serve(async (req) => {
 
     const service = createClient(url, serviceKey);
 
-    // If target is staff, require admin.
+    // Never allow deleting admins (safety).
     const profResp = await service
       .from("profiles")
       .select("role")
       .eq("id", userId)
       .maybeSingle();
     const targetRole = String(profResp.data?.role ?? "user").toLowerCase();
+    if (targetRole === "admin") {
+      return new Response(JSON.stringify({ error: "FORBIDDEN_DELETE_ADMIN" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // If target is staff (coach), require admin.
     if ((targetRole === "admin" || targetRole === "coach") && !isAdmin) {
       return new Response(JSON.stringify({ error: "FORBIDDEN_DELETE_STAFF" }), {
         status: 403,

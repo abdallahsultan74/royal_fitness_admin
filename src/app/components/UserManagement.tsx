@@ -699,7 +699,7 @@ export function UserManagement() {
                     >
                       {isActiveStatus(u.status) ? <ShieldOff className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
                     </button>
-                    {live && typeof u.id === "string" ? (
+                    {live && typeof u.id === "string" && String(u.role ?? "user").toLowerCase() !== "admin" ? (
                       <button
                         type="button"
                         onClick={() => requestDeleteUser(u)}
