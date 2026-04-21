@@ -18,6 +18,9 @@ type Subscription = {
   userName: string;
   userEmail: string;
   plan: string;
+  packageKey?: string;
+  packageName?: string;
+  variantId?: string;
   status: string;
   amount: number;
   currency?: string;
@@ -28,6 +31,23 @@ type Subscription = {
   approvedAt?: string;
   preferredCoachId?: string;
   preferredCoachName?: string;
+};
+
+type PackageRow = {
+  packageId: string;
+  packageKey: string;
+  name: string;
+  nameAr?: string;
+  description?: string;
+  descriptionAr?: string;
+  packageActive: boolean;
+  variants: Array<{
+    variantId: string;
+    durationDays: number;
+    priceCents: number;
+    currency: string;
+    active: boolean;
+  }>;
 };
 
 const fallbackSubscriptions: Subscription[] = [
@@ -56,6 +76,27 @@ export function Subscriptions() {
   const [priceAmount, setPriceAmount] = useState<number>(0);
   const [priceSaving, setPriceSaving] = useState(false);
 
+  const [packages, setPackages] = useState<PackageRow[]>([]);
+  const [packagesError, setPackagesError] = useState<string | null>(null);
+  const [pkgKey, setPkgKey] = useState("pro");
+  const [pkgNameEn, setPkgNameEn] = useState("Pro");
+  const [pkgNameAr, setPkgNameAr] = useState("برو");
+  const [pkgDescEn, setPkgDescEn] = useState("");
+  const [pkgDescAr, setPkgDescAr] = useState("");
+  const [pkgActive, setPkgActive] = useState(true);
+  const [pkgSaving, setPkgSaving] = useState(false);
+
+  const [variantPkgId, setVariantPkgId] = useState<string>("");
+  const [variantDurationDays, setVariantDurationDays] = useState(30);
+  const [variantCurrency, setVariantCurrency] = useState("EGP");
+  const [variantAmount, setVariantAmount] = useState<number>(0);
+  const [variantActive, setVariantActive] = useState(true);
+  const [variantSaving, setVariantSaving] = useState(false);
+
+  const [entPkgId, setEntPkgId] = useState<string>("");
+  const [entJson, setEntJson] = useState<string>('{"admin_plans": true, "challenges": true}');
+  const [entSaving, setEntSaving] = useState(false);
+
   useEffect(() => {
     if (!db || !hasFirebaseConfig) {
       setSubscriptions(localizedFallback);
@@ -71,6 +112,51 @@ export function Subscriptions() {
 
     const loadRequests = async () => {
       try {
+        // Load packages for mapping + management UI.
+        setPackagesError(null);
+        const packagesResp = await db.rpc("api_list_subscription_packages");
+        if (packagesResp.error) {
+          console.error("[Subscriptions] api_list_subscription_packages error", packagesResp.error);
+          setPackagesError(packagesResp.error.message);
+          setPackages([]);
+        } else {
+          const rows = (packagesResp.data ?? []) as any[];
+          const byId = new Map<string, PackageRow>();
+          rows.forEach((r) => {
+            const packageId = String(r.package_id ?? "");
+            const packageKey = String(r.package_key ?? "");
+            if (!packageId) return;
+            const cur = byId.get(packageId) ?? {
+              packageId,
+              packageKey,
+              name: String(r.name ?? packageKey ?? ""),
+              nameAr: r.name_ar ? String(r.name_ar) : undefined,
+              description: r.description ? String(r.description) : undefined,
+              descriptionAr: r.description_ar ? String(r.description_ar) : undefined,
+              packageActive: Boolean(r.package_active),
+              variants: [],
+            };
+            const variantId = String(r.variant_id ?? "");
+            if (variantId) {
+              cur.variants.push({
+                variantId,
+                durationDays: Number(r.duration_days ?? 30) || 30,
+                priceCents: Number(r.price_cents ?? 0) || 0,
+                currency: String(r.currency ?? "EGP") || "EGP",
+                active: Boolean(r.variant_active),
+              });
+            }
+            byId.set(packageId, cur);
+          });
+          const list = Array.from(byId.values()).sort((a, b) => a.packageKey.localeCompare(b.packageKey));
+          list.forEach((p) => {
+            p.variants.sort((a, b) => a.durationDays - b.durationDays);
+          });
+          setPackages(list);
+          if (!variantPkgId && list.length) setVariantPkgId(list[0].packageId);
+          if (!entPkgId && list.length) setEntPkgId(list[0].packageId);
+        }
+
         let localPricesByKey: Record<string, { priceCents: number; currency: string }> = {};
         const pricesResp = await db.rpc("api_list_subscription_prices");
         if (pricesResp.error) {
@@ -108,7 +194,7 @@ export function Subscriptions() {
 
         const resp = await db
           .from("subscription_requests")
-          .select("id, requested_plan, status, created_at, note, user_id, request_kind, duration_days, price_cents, currency, approved_at, preferred_coach_id")
+          .select("id, requested_plan, status, created_at, note, user_id, request_kind, duration_days, price_cents, currency, approved_at, preferred_coach_id, package_id, variant_id")
           .order("created_at", { ascending: false });
         // Important: supabase-js does not always throw on permission errors.
         if (resp.error) {
@@ -170,12 +256,25 @@ export function Subscriptions() {
           const planPrice = localPricesByKey[priceKey];
           const cents = Number(data.price_cents ?? (planPrice?.priceCents ?? 0)) || 0;
           const cur = String(data.currency ?? (planPrice?.currency ?? "EGP")) || "EGP";
+
+          const pkgId = data.package_id?.toString();
+          const vId = data.variant_id?.toString();
+          let pkgName: string | undefined;
+          let pkgKey2: string | undefined;
+          if (pkgId) {
+            const p = packages.find((x) => x.packageId === pkgId);
+            pkgKey2 = p?.packageKey;
+            pkgName = (lang === "ar" ? (p?.nameAr || p?.name) : p?.name) || p?.packageKey;
+          }
           return {
             id: data.id,
             userId: uid ?? "",
             userName: prof?.name?.toString() ?? t("مستخدم", "User"),
             userEmail: prof?.email?.toString() ?? "unknown@email.com",
-            plan: data.requested_plan?.toString() ?? "Pro",
+            plan: pkgName ?? (data.requested_plan?.toString() ?? "Pro"),
+            packageKey: pkgKey2,
+            packageName: pkgName,
+            variantId: vId,
             status: data.status?.toString() ?? "pending",
             amount: cents > 0 ? cents / 100 : (planKey.includes("basic") ? 19 : 49),
             currency: cur,
@@ -349,9 +448,8 @@ export function Subscriptions() {
       await db.from("subscription_requests").update({ status: next }).eq("id", item.id);
 
       if (next === "approved") {
-        const planLower = item.plan.toLowerCase();
+        const planLower = (item.packageKey || item.plan).toLowerCase();
         // Activation: set expiry from now. Renewal: extend from max(now, current expiry).
-        const nowIso = new Date().toISOString();
         let base: Date | null = null;
         if (item.kind === "renew") {
           const profResp = await db.from("profiles").select("plan_expires_at").eq("id", item.userId).maybeSingle();
@@ -362,10 +460,19 @@ export function Subscriptions() {
         }
         const nextExpiry = new Date(base.getTime() + item.durationDays * 24 * 60 * 60 * 1000).toISOString();
 
-        await db
-          .from("profiles")
-          .update({ plan: planLower, status: "active", plan_expires_at: nextExpiry })
-          .eq("id", item.userId);
+        // Prefer package assignment when the request has a variant.
+        if (item.variantId) {
+          const rpc = await db.rpc("api_staff_assign_user_package", {
+            p_user_id: item.userId,
+            p_variant_id: item.variantId,
+          });
+          if (rpc.error) throw rpc.error;
+        } else {
+          await db
+            .from("profiles")
+            .update({ plan: planLower, status: "active", plan_expires_at: nextExpiry })
+            .eq("id", item.userId);
+        }
 
         // Notify user on approval.
         await db.from("user_notifications").insert({
@@ -379,6 +486,7 @@ export function Subscriptions() {
               : `Your subscription has been activated for ${item.durationDays} days.`,
         });
       } else {
+        // If rejecting, do not change profile subscription state.
         // Notify user on rejection.
         await db.from("user_notifications").insert({
           user_id: item.userId,
@@ -400,6 +508,84 @@ export function Subscriptions() {
       });
     } finally {
       setPendingId(null);
+    }
+  };
+
+  const savePackage = async () => {
+    if (!db || !hasFirebaseConfig) return;
+    const key = (pkgKey || "").trim().toLowerCase();
+    const name = (pkgNameEn || "").trim();
+    if (!key || !name) return;
+    setPkgSaving(true);
+    setPackagesError(null);
+    try {
+      await ensureStaffAuth();
+      const resp = await db.rpc("api_staff_upsert_subscription_package", {
+        p_key: key,
+        p_name: name,
+        p_name_ar: (pkgNameAr || "").trim() || null,
+        p_description: (pkgDescEn || "").trim() || null,
+        p_description_ar: (pkgDescAr || "").trim() || null,
+        p_active: Boolean(pkgActive),
+      });
+      if (resp.error) throw resp.error;
+      await loadRequestsRef.current?.();
+    } catch (e) {
+      setPackagesError((e as Error)?.message ?? "Failed to save package.");
+    } finally {
+      setPkgSaving(false);
+    }
+  };
+
+  const saveVariant = async () => {
+    if (!db || !hasFirebaseConfig) return;
+    if (!variantPkgId) return;
+    const dur = Number(variantDurationDays) || 30;
+    const cents = Math.max(0, Math.round((Number(variantAmount) || 0) * 100));
+    const cur = (variantCurrency || "EGP").trim().toUpperCase();
+    setVariantSaving(true);
+    setPackagesError(null);
+    try {
+      await ensureStaffAuth();
+      const resp = await db.rpc("api_staff_upsert_subscription_package_variant", {
+        p_package_id: variantPkgId,
+        p_duration_days: dur,
+        p_price_cents: cents,
+        p_currency: cur,
+        p_active: Boolean(variantActive),
+      });
+      if (resp.error) throw resp.error;
+      await loadRequestsRef.current?.();
+    } catch (e) {
+      setPackagesError((e as Error)?.message ?? "Failed to save variant.");
+    } finally {
+      setVariantSaving(false);
+    }
+  };
+
+  const saveEntitlements = async () => {
+    if (!db || !hasFirebaseConfig) return;
+    if (!entPkgId) return;
+    setEntSaving(true);
+    setPackagesError(null);
+    try {
+      await ensureStaffAuth();
+      let parsed: any = {};
+      try {
+        parsed = JSON.parse(entJson || "{}");
+      } catch {
+        throw new Error("Entitlements must be valid JSON.");
+      }
+      const resp = await db.rpc("api_staff_set_subscription_package_entitlements", {
+        p_package_id: entPkgId,
+        p_entitlements: parsed,
+      });
+      if (resp.error) throw resp.error;
+      await loadRequestsRef.current?.();
+    } catch (e) {
+      setPackagesError((e as Error)?.message ?? "Failed to save entitlements.");
+    } finally {
+      setEntSaving(false);
     }
   };
 
@@ -593,6 +779,237 @@ export function Subscriptions() {
             {t("مثال مفاتيح الخطط: pro / basic / trial", "Example keys: pro / basic / trial")}
           </span>
         </div>
+      </div>
+
+      <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-[#F5EAD4]" style={{ fontSize: 15, fontWeight: 700 }}>
+            {t("باقات الاشتراك (أسماء حرة + مدد وأسعار)", "Subscription packages (custom names + durations)")}
+          </h2>
+          <p className="text-muted-foreground" style={{ fontSize: 12 }}>
+            {t(
+              "هذه الباقات تظهر للمستخدم داخل شاشة تأكيد الاشتراك. عند الموافقة سيتم تطبيقها على حساب المستخدم فورًا.",
+              "These packages are shown to users on the mobile confirmation screen. Approval applies them immediately.",
+            )}
+          </p>
+          {packagesError ? (
+            <div className="mt-2 text-red-400" style={{ fontSize: 13 }}>
+              {packagesError}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="rounded-lg border border-border/70 bg-secondary/20 p-3">
+            <div className="mb-2 text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 700 }}>
+              {t("إنشاء/تعديل باقة", "Create / update package")}
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <input
+                value={pkgKey}
+                onChange={(e) => setPkgKey(e.target.value)}
+                className="rounded border border-border bg-background px-2 py-1.5 text-[#F5EAD4]"
+                style={{ fontSize: 12 }}
+                placeholder="key (e.g. pro, gold)"
+              />
+              <label className="flex items-center gap-2 text-muted-foreground" style={{ fontSize: 12 }}>
+                <input type="checkbox" checked={pkgActive} onChange={(e) => setPkgActive(e.target.checked)} />
+                {t("فعّالة", "Active")}
+              </label>
+              <input
+                value={pkgNameEn}
+                onChange={(e) => setPkgNameEn(e.target.value)}
+                className="rounded border border-border bg-background px-2 py-1.5 text-[#F5EAD4]"
+                style={{ fontSize: 12 }}
+                placeholder={t("اسم EN", "Name (EN)")}
+              />
+              <input
+                value={pkgNameAr}
+                onChange={(e) => setPkgNameAr(e.target.value)}
+                className="rounded border border-border bg-background px-2 py-1.5 text-[#F5EAD4]"
+                style={{ fontSize: 12 }}
+                placeholder={t("اسم AR", "Name (AR)")}
+              />
+            </div>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <textarea
+                value={pkgDescEn}
+                onChange={(e) => setPkgDescEn(e.target.value)}
+                className="rounded border border-border bg-background px-2 py-1.5 text-[#F5EAD4]"
+                style={{ fontSize: 12 }}
+                rows={2}
+                placeholder={t("وصف EN", "Description (EN)")}
+              />
+              <textarea
+                value={pkgDescAr}
+                onChange={(e) => setPkgDescAr(e.target.value)}
+                className="rounded border border-border bg-background px-2 py-1.5 text-[#F5EAD4]"
+                style={{ fontSize: 12 }}
+                rows={2}
+                placeholder={t("وصف AR", "Description (AR)")}
+              />
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                disabled={!live || pkgSaving}
+                onClick={() => void savePackage()}
+                className="inline-flex items-center justify-center rounded-lg bg-[#D4AF37] px-4 py-2 text-[#0B1B14] hover:brightness-110 disabled:opacity-60"
+                style={{ fontSize: 12, fontWeight: 800 }}
+              >
+                {pkgSaving ? t("جارٍ الحفظ…", "Saving…") : t("حفظ الباقة", "Save package")}
+              </button>
+              <span className="text-muted-foreground" style={{ fontSize: 12 }}>
+                {t("المفتاح key ثابت ويستخدم كـ plan في profiles.", "The key is stable and becomes profiles.plan.")}
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border/70 bg-secondary/20 p-3">
+            <div className="mb-2 text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 700 }}>
+              {t("مدة/سعر الباقة (Variant)", "Package variant (duration/price)")}
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <select
+                value={variantPkgId}
+                onChange={(e) => setVariantPkgId(e.target.value)}
+                className="rounded border border-border bg-background px-2 py-1.5 text-[#F5EAD4]"
+                style={{ fontSize: 12 }}
+              >
+                <option value="">{t("اختر باقة", "Select package")}</option>
+                {packages.map((p) => (
+                  <option key={p.packageId} value={p.packageId}>
+                    {lang === "ar" ? (p.nameAr || p.name) : p.name} ({p.packageKey})
+                  </option>
+                ))}
+              </select>
+              <label className="flex items-center gap-2 text-muted-foreground" style={{ fontSize: 12 }}>
+                <input type="checkbox" checked={variantActive} onChange={(e) => setVariantActive(e.target.checked)} />
+                {t("فعّالة", "Active")}
+              </label>
+              <input
+                value={variantDurationDays}
+                onChange={(e) => setVariantDurationDays(Number(e.target.value) || 30)}
+                className="rounded border border-border bg-background px-2 py-1.5 text-[#F5EAD4]"
+                style={{ fontSize: 12 }}
+                type="number"
+                min={1}
+                placeholder={t("أيام", "Days")}
+              />
+              <input
+                value={variantCurrency}
+                onChange={(e) => setVariantCurrency(e.target.value)}
+                className="rounded border border-border bg-background px-2 py-1.5 text-[#F5EAD4]"
+                style={{ fontSize: 12 }}
+                placeholder="EGP"
+              />
+              <input
+                value={variantAmount}
+                onChange={(e) => setVariantAmount(Number(e.target.value) || 0)}
+                className="rounded border border-border bg-background px-2 py-1.5 text-[#F5EAD4]"
+                style={{ fontSize: 12 }}
+                type="number"
+                min={0}
+                step={0.5}
+                placeholder={t("السعر", "Price")}
+              />
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                disabled={!live || variantSaving || !variantPkgId}
+                onClick={() => void saveVariant()}
+                className="inline-flex items-center justify-center rounded-lg bg-[#D4AF37] px-4 py-2 text-[#0B1B14] hover:brightness-110 disabled:opacity-60"
+                style={{ fontSize: 12, fontWeight: 800 }}
+              >
+                {variantSaving ? t("جارٍ الحفظ…", "Saving…") : t("حفظ المدة", "Save variant")}
+              </button>
+              <span className="text-muted-foreground" style={{ fontSize: 12 }}>
+                {t("يمكن إضافة أكثر من مدة لنفس الباقة.", "You can add multiple durations per package.")}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border/70 bg-secondary/20 p-3">
+          <div className="mb-2 text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 700 }}>
+            {t("صلاحيات/مميزات الباقة (Entitlements)", "Package entitlements (feature flags)")}
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <select
+              value={entPkgId}
+              onChange={(e) => setEntPkgId(e.target.value)}
+              className="rounded border border-border bg-background px-2 py-1.5 text-[#F5EAD4]"
+              style={{ fontSize: 12 }}
+            >
+              <option value="">{t("اختر باقة", "Select package")}</option>
+              {packages.map((p) => (
+                <option key={p.packageId} value={p.packageId}>
+                  {lang === "ar" ? (p.nameAr || p.name) : p.name} ({p.packageKey})
+                </option>
+              ))}
+            </select>
+            <div className="text-muted-foreground" style={{ fontSize: 12 }}>
+              {t("JSON يتم دمجه داخل profiles.feature_flags عند تفعيل الاشتراك.", "JSON is merged into profiles.feature_flags on activation.")}
+            </div>
+          </div>
+          <textarea
+            value={entJson}
+            onChange={(e) => setEntJson(e.target.value)}
+            className="mt-2 w-full rounded border border-border bg-background px-2 py-2 text-[#F5EAD4]"
+            style={{ fontSize: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+            rows={4}
+            spellCheck={false}
+          />
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!live || entSaving || !entPkgId}
+              onClick={() => void saveEntitlements()}
+              className="inline-flex items-center justify-center rounded-lg bg-[#D4AF37] px-4 py-2 text-[#0B1B14] hover:brightness-110 disabled:opacity-60"
+              style={{ fontSize: 12, fontWeight: 800 }}
+            >
+              {entSaving ? t("جارٍ الحفظ…", "Saving…") : t("حفظ الصلاحيات", "Save entitlements")}
+            </button>
+          </div>
+        </div>
+
+        {packages.length ? (
+          <div className="rounded-lg border border-border/70 bg-secondary/20 p-3">
+            <div className="mb-2 text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 700 }}>
+              {t("الباقات الحالية", "Existing packages")}
+            </div>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              {packages.map((p) => (
+                <div key={p.packageId} className="rounded-md border border-border/60 bg-card/60 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 700 }}>
+                        {lang === "ar" ? (p.nameAr || p.name) : p.name}
+                        <span className="text-muted-foreground" style={{ fontWeight: 500 }}> · {p.packageKey}</span>
+                      </div>
+                      {p.description ? (
+                        <div className="text-muted-foreground" style={{ fontSize: 11 }}>
+                          {lang === "ar" ? (p.descriptionAr || p.description) : p.description}
+                        </div>
+                      ) : null}
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full ${p.packageActive ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`} style={{ fontSize: 11 }}>
+                      {p.packageActive ? t("نشطة", "Active") : t("موقوفة", "Inactive")}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {p.variants.map((v) => (
+                      <span key={v.variantId} className="rounded-full border border-border px-2 py-0.5 text-muted-foreground" style={{ fontSize: 11 }}>
+                        {v.durationDays}d · {(v.priceCents / 100).toLocaleString(lang === "ar" ? "ar-EG" : "en-US")} {v.currency}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
