@@ -26,7 +26,7 @@ type Subscription = {
   currency?: string;
   renewDate: string;
   note?: string;
-  kind: "activate" | "renew";
+  kind: "activate" | "renew" | "cancel";
   durationDays: number;
   approvedAt?: string;
   preferredCoachId?: string;
@@ -330,7 +330,12 @@ export function Subscriptions() {
             currency: cur,
             renewDate: data.created_at?.toString() ?? new Date().toISOString(),
             note: data.note?.toString(),
-            kind: (String(data.request_kind ?? "activate").toLowerCase() === "renew" ? "renew" : "activate"),
+            kind: (() => {
+              const k = String(data.request_kind ?? "activate").toLowerCase();
+              if (k === "renew") return "renew";
+              if (k === "cancel") return "cancel";
+              return "activate";
+            })(),
             durationDays: dur,
             approvedAt: data.approved_at?.toString(),
             preferredCoachId: data.preferred_coach_id?.toString(),
@@ -561,8 +566,14 @@ export function Subscriptions() {
       const session = await db.auth.getSession();
       const senderId = session.data.session?.user?.id ?? null;
 
+      // Cancel request: revoke immediately on approval.
+      if (next === "approved" && item.kind === "cancel") {
+        const revoke = await db.rpc("api_staff_revoke_user_package", { p_user_id: item.userId });
+        if (revoke.error) throw revoke.error;
+        await db.from("subscription_requests").update({ status: next }).eq("id", item.id);
+      }
       // If approving a package-based request, persist the variant price on the request row.
-      if (next === "approved" && item.variantId) {
+      else if (next === "approved" && item.variantId) {
         const vResp = await db
           .from("subscription_package_variants")
           .select("price_cents, currency")
@@ -580,6 +591,22 @@ export function Subscriptions() {
       }
 
       if (next === "approved") {
+        if (item.kind === "cancel") {
+          await db.from("user_notifications").insert({
+            user_id: item.userId,
+            sender_id: senderId,
+            type: "notification",
+            title: "Subscription cancelled",
+            body: "Your subscription has been cancelled.",
+          });
+          await db.from("admin_notifications").insert({
+            type: "subscription_request_update",
+            title: t("تم إلغاء الاشتراك", "Subscription cancelled"),
+            body: `${item.userName} (${item.userEmail}) - ${t("تمت الموافقة على طلب الإلغاء", "Cancellation approved")}`,
+            read: false,
+          });
+          return;
+        }
         const planLower = (item.packageKey || item.plan).toLowerCase();
         // Activation: set expiry from now. Renewal: extend from max(now, current expiry).
         let base: Date | null = null;
