@@ -123,6 +123,7 @@ export function Subscriptions() {
 
     const loadRequests = async () => {
       try {
+        const variantPriceById = new Map<string, { priceCents: number; currency: string }>();
         // Load packages for mapping + management UI.
         setPackagesError(null);
         const packagesResp = await db.rpc("api_list_subscription_packages");
@@ -149,13 +150,16 @@ export function Subscriptions() {
             };
             const variantId = String(r.variant_id ?? "");
             if (variantId) {
+              const priceCents = Number(r.price_cents ?? 0) || 0;
+              const currency = String(r.currency ?? "EGP") || "EGP";
               cur.variants.push({
                 variantId,
                 durationDays: Number(r.duration_days ?? 30) || 30,
-                priceCents: Number(r.price_cents ?? 0) || 0,
-                currency: String(r.currency ?? "EGP") || "EGP",
+                priceCents,
+                currency,
                 active: Boolean(r.variant_active),
               });
+              variantPriceById.set(variantId, { priceCents, currency });
             }
             byId.set(packageId, cur);
           });
@@ -314,11 +318,12 @@ export function Subscriptions() {
           const dur = Number(data.duration_days ?? 30) || 30;
           const priceKey = `${planKey}:${dur}`;
           const planPrice = localPricesByKey[priceKey];
-          const cents = Number(data.price_cents ?? (planPrice?.priceCents ?? 0)) || 0;
-          const cur = String(data.currency ?? (planPrice?.currency ?? "EGP")) || "EGP";
+          const vId = data.variant_id?.toString();
+          const variantPrice = vId ? variantPriceById.get(String(vId)) : undefined;
+          const cents = Number(data.price_cents ?? (variantPrice?.priceCents ?? planPrice?.priceCents ?? 0)) || 0;
+          const cur = String(data.currency ?? (variantPrice?.currency ?? planPrice?.currency ?? "EGP")) || "EGP";
 
           const pkgId = data.package_id?.toString();
-          const vId = data.variant_id?.toString();
           let pkgName: string | undefined;
           let pkgKey2: string | undefined;
           if (pkgId) {
@@ -334,7 +339,7 @@ export function Subscriptions() {
             plan: pkgName ?? (data.requested_plan?.toString() ?? "Pro"),
             packageKey: pkgKey2,
             packageName: pkgName,
-            variantId: vId,
+            variantId: vId ? String(vId) : undefined,
             status: data.status?.toString() ?? "pending",
             amount: cents > 0 ? cents / 100 : (planKey.includes("basic") ? 19 : 49),
             currency: cur,
@@ -505,7 +510,23 @@ export function Subscriptions() {
       const session = await db.auth.getSession();
       const senderId = session.data.session?.user?.id ?? null;
 
-      await db.from("subscription_requests").update({ status: next }).eq("id", item.id);
+      // If approving a package-based request, persist the variant price on the request row.
+      if (next === "approved" && item.variantId) {
+        const vResp = await db
+          .from("subscription_package_variants")
+          .select("price_cents, currency")
+          .eq("id", item.variantId)
+          .maybeSingle();
+        if (vResp.error) throw vResp.error;
+        const vCents = Number((vResp.data as any)?.price_cents ?? 0) || 0;
+        const vCur = String((vResp.data as any)?.currency ?? "EGP") || "EGP";
+        await db
+          .from("subscription_requests")
+          .update({ status: next, price_cents: vCents, currency: vCur })
+          .eq("id", item.id);
+      } else {
+        await db.from("subscription_requests").update({ status: next }).eq("id", item.id);
+      }
 
       if (next === "approved") {
         const planLower = (item.packageKey || item.plan).toLowerCase();
