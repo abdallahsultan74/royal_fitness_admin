@@ -97,6 +97,11 @@ export function Subscriptions() {
   const [entJson, setEntJson] = useState<string>('{"admin_plans": true, "challenges": true}');
   const [entSaving, setEntSaving] = useState(false);
 
+  const [trainingPlans, setTrainingPlans] = useState<Array<{ id: string; title: string }>>([]);
+  const [bindPkgId, setBindPkgId] = useState<string>("");
+  const [boundPlanIds, setBoundPlanIds] = useState<Set<string>>(new Set());
+  const [bindingsSaving, setBindingsSaving] = useState(false);
+
   useEffect(() => {
     if (!db || !hasFirebaseConfig) {
       setSubscriptions(localizedFallback);
@@ -155,6 +160,32 @@ export function Subscriptions() {
           setPackages(list);
           if (!variantPkgId && list.length) setVariantPkgId(list[0].packageId);
           if (!entPkgId && list.length) setEntPkgId(list[0].packageId);
+          if (!bindPkgId && list.length) setBindPkgId(list[0].packageId);
+        }
+
+        // Load training plans list + current bindings (staff-only).
+        const plansResp = await db.from("training_plans").select("id, title").order("title", { ascending: true });
+        if (plansResp.error) {
+          console.error("[Subscriptions] training_plans error", plansResp.error);
+        } else {
+          const list = ((plansResp.data ?? []) as any[]).map((p) => ({
+            id: String(p.id),
+            title: String(p.title ?? "Plan"),
+          }));
+          setTrainingPlans(list);
+        }
+
+        if (bindPkgId) {
+          const bindsResp = await db
+            .from("subscription_package_plans")
+            .select("plan_id")
+            .eq("package_id", bindPkgId);
+          if (bindsResp.error) {
+            console.error("[Subscriptions] subscription_package_plans error", bindsResp.error);
+          } else {
+            const ids = new Set<string>(((bindsResp.data ?? []) as any[]).map((r) => String(r.plan_id)));
+            setBoundPlanIds(ids);
+          }
         }
 
         let localPricesByKey: Record<string, { priceCents: number; currency: string }> = {};
@@ -589,6 +620,32 @@ export function Subscriptions() {
     }
   };
 
+  const savePlanBindings = async () => {
+    if (!db || !hasFirebaseConfig) return;
+    if (!bindPkgId) return;
+    setBindingsSaving(true);
+    setPackagesError(null);
+    try {
+      await ensureStaffAuth();
+      const del = await db.from("subscription_package_plans").delete().eq("package_id", bindPkgId);
+      if (del.error) throw del.error;
+
+      const rows = Array.from(boundPlanIds.values()).map((planId) => ({
+        package_id: bindPkgId,
+        plan_id: planId,
+      }));
+      if (rows.length > 0) {
+        const ins = await db.from("subscription_package_plans").insert(rows);
+        if (ins.error) throw ins.error;
+      }
+      await loadRequestsRef.current?.();
+    } catch (e) {
+      setPackagesError((e as Error)?.message ?? "Failed to save plan bindings.");
+    } finally {
+      setBindingsSaving(false);
+    }
+  };
+
   const savePlanPrice = async () => {
     if (!db || !hasFirebaseConfig) return;
     const planKey = (pricePlanKey || "").trim().toLowerCase();
@@ -970,6 +1027,79 @@ export function Subscriptions() {
               style={{ fontSize: 12, fontWeight: 800 }}
             >
               {entSaving ? t("جارٍ الحفظ…", "Saving…") : t("حفظ الصلاحيات", "Save entitlements")}
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border/70 bg-secondary/20 p-3">
+          <div className="mb-2 text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 700 }}>
+            {t("ربط خطط التدريب بالباقة", "Bind training plans to package")}
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <select
+              value={bindPkgId}
+              onChange={(e) => {
+                const next = e.target.value;
+                setBindPkgId(next);
+                // refresh bindings for the selected package on next load tick
+                void loadRequestsRef.current?.();
+              }}
+              className="rounded border border-border bg-background px-2 py-1.5 text-[#F5EAD4]"
+              style={{ fontSize: 12 }}
+            >
+              <option value="">{t("اختر باقة", "Select package")}</option>
+              {packages.map((p) => (
+                <option key={p.packageId} value={p.packageId}>
+                  {lang === "ar" ? (p.nameAr || p.name) : p.name} ({p.packageKey})
+                </option>
+              ))}
+            </select>
+            <div className="text-muted-foreground" style={{ fontSize: 12 }}>
+              {t(
+                "اختيار الخطط المسموح بها لهذه الباقة (سيتم استخدامها لاحقاً في التعيين/العرض).",
+                "Choose the plans allowed for this package (used later for assignment/display).",
+              )}
+            </div>
+          </div>
+
+          <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+            {trainingPlans.length === 0 ? (
+              <div className="text-muted-foreground" style={{ fontSize: 12 }}>
+                {t("لا توجد خطط تدريب حالياً.", "No training plans found.")}
+              </div>
+            ) : (
+              trainingPlans.map((p) => {
+                const checked = boundPlanIds.has(p.id);
+                return (
+                  <label key={p.id} className="flex items-center gap-2 rounded-md border border-border/60 bg-card/50 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        const next = new Set(boundPlanIds);
+                        if (e.target.checked) next.add(p.id);
+                        else next.delete(p.id);
+                        setBoundPlanIds(next);
+                      }}
+                    />
+                    <span className="text-[#F5EAD4]" style={{ fontSize: 12, fontWeight: 600 }}>
+                      {p.title}
+                    </span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!live || bindingsSaving || !bindPkgId}
+              onClick={() => void savePlanBindings()}
+              className="inline-flex items-center justify-center rounded-lg bg-[#D4AF37] px-4 py-2 text-[#0B1B14] hover:brightness-110 disabled:opacity-60"
+              style={{ fontSize: 12, fontWeight: 800 }}
+            >
+              {bindingsSaving ? t("جارٍ الحفظ…", "Saving…") : t("حفظ ربط الخطط", "Save plan bindings")}
             </button>
           </div>
         </div>
