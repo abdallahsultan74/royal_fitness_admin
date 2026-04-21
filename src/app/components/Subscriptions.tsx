@@ -881,6 +881,15 @@ export function Subscriptions() {
     }
   };
 
+  const cancellationRows = useMemo(
+    () => subscriptions.filter((s) => s.kind === "cancel").slice(0, 200),
+    [subscriptions],
+  );
+  const mainRows = useMemo(
+    () => subscriptions.filter((s) => s.kind !== "cancel"),
+    [subscriptions],
+  );
+
   return (
     <div className="min-w-0 max-w-full space-y-4 p-4 sm:space-y-6 sm:p-6">
       <div className="min-w-0">
@@ -1383,6 +1392,41 @@ export function Subscriptions() {
         ) : null}
       </div>
 
+      {cancellationRows.length ? (
+        <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
+          <div className="px-4 py-3 border-b border-border text-[#F5EAD4]" style={{ fontSize: 14, fontWeight: 800 }}>
+            {t("إلغاءات الاشتراك", "Subscription cancellations")}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px]">
+              <thead>
+                <tr className="border-b border-border">
+                  {[t("المستخدم", "User"), t("التاريخ", "Date"), t("ملاحظات", "Note")].map((h) => (
+                    <th key={h} className="px-4 py-3 text-start text-muted-foreground" style={{ fontSize: 12, fontWeight: 500 }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {cancellationRows.map((s) => (
+                  <tr key={s.id} className="border-b border-border/50">
+                    <td className="px-4 py-3">
+                      <p className="text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 500 }}>{s.userName}</p>
+                      <p className="text-muted-foreground" style={{ fontSize: 12 }}>{s.userEmail}</p>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {new Date(s.renewDate).toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US")}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{s.note ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
       <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px]">
@@ -1394,7 +1438,7 @@ export function Subscriptions() {
             </tr>
           </thead>
           <tbody>
-            {subscriptions.map((s) => (
+            {mainRows.map((s) => (
               <tr key={s.id} className="border-b border-border/50">
                 <td className="px-4 py-3">
                   <p className="text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 500 }}>{s.userName}</p>
