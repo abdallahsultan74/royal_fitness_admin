@@ -6,6 +6,7 @@ declare
   v_pkg_id uuid;
   v_price_cents integer;
   v_currency text;
+  v_updated integer;
 begin
   insert into public.subscription_packages(key, name, name_ar, description, description_ar, active)
   values ('pro', 'Pro', 'برو', 'Default subscription package', 'الباقة الافتراضية للاشتراك', true)
@@ -37,12 +38,18 @@ begin
   values (
     v_pkg_id, 30, coalesce(v_price_cents, 0), upper(coalesce(v_currency, 'EGP')), true
   )
-  on conflict (package_id, duration_days)
-  do update set
-    price_cents = excluded.price_cents,
-    currency = excluded.currency,
-    active = true,
-    updated_at = timezone('utc', now());
+  ;
+
+  -- If row already exists (e.g. previous manual insert), update it instead.
+  exception when unique_violation then
+    update public.subscription_package_variants
+    set
+      price_cents = coalesce(v_price_cents, 0),
+      currency = upper(coalesce(v_currency, 'EGP')),
+      active = true,
+      updated_at = timezone('utc', now())
+    where package_id = v_pkg_id
+      and duration_days = 30;
 end;
 $$;
 
