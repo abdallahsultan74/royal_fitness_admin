@@ -94,6 +94,11 @@ export function Subscriptions() {
   const [variantSaving, setVariantSaving] = useState(false);
 
   const [entPkgId, setEntPkgId] = useState<string>("");
+  const [entFlags, setEntFlags] = useState<{ admin_plans: boolean; challenges: boolean }>({
+    admin_plans: true,
+    challenges: true,
+  });
+  const [entShowAdvanced, setEntShowAdvanced] = useState(false);
   const [entJson, setEntJson] = useState<string>('{"admin_plans": true, "challenges": true}');
   const [entSaving, setEntSaving] = useState(false);
 
@@ -185,6 +190,24 @@ export function Subscriptions() {
           } else {
             const ids = new Set<string>(((bindsResp.data ?? []) as any[]).map((r) => String(r.plan_id)));
             setBoundPlanIds(ids);
+          }
+        }
+
+        if (entPkgId) {
+          const entResp = await db
+            .from("subscription_package_entitlements")
+            .select("entitlements")
+            .eq("package_id", entPkgId)
+            .maybeSingle();
+          if (entResp.error) {
+            console.error("[Subscriptions] subscription_package_entitlements error", entResp.error);
+          } else {
+            const raw = (entResp.data as any)?.entitlements;
+            const obj = raw && typeof raw === "object" ? raw : {};
+            const admin_plans = typeof obj?.admin_plans === "boolean" ? obj.admin_plans : true;
+            const challenges = typeof obj?.challenges === "boolean" ? obj.challenges : true;
+            setEntFlags({ admin_plans, challenges });
+            setEntJson(JSON.stringify({ ...obj }, null, 2));
           }
         }
 
@@ -601,11 +624,17 @@ export function Subscriptions() {
     setPackagesError(null);
     try {
       await ensureStaffAuth();
-      let parsed: any = {};
-      try {
-        parsed = JSON.parse(entJson || "{}");
-      } catch {
-        throw new Error("Entitlements must be valid JSON.");
+      let parsed: any = {
+        admin_plans: Boolean(entFlags.admin_plans),
+        challenges: Boolean(entFlags.challenges),
+      };
+      if (entShowAdvanced) {
+        try {
+          const advanced = JSON.parse(entJson || "{}");
+          if (advanced && typeof advanced === "object") parsed = { ...advanced, ...parsed };
+        } catch {
+          throw new Error("Advanced entitlements must be valid JSON.");
+        }
       }
       const resp = await db.rpc("api_staff_set_subscription_package_entitlements", {
         p_package_id: entPkgId,
@@ -1007,17 +1036,63 @@ export function Subscriptions() {
               ))}
             </select>
             <div className="text-muted-foreground" style={{ fontSize: 12 }}>
-              {t("JSON يتم دمجه داخل profiles.feature_flags عند تفعيل الاشتراك.", "JSON is merged into profiles.feature_flags on activation.")}
+              {t(
+                "اختار المميزات اللي هتكون متاحة للمستخدم في الباقة.",
+                "Choose which features are enabled for this package.",
+              )}
             </div>
           </div>
-          <textarea
-            value={entJson}
-            onChange={(e) => setEntJson(e.target.value)}
-            className="mt-2 w-full rounded border border-border bg-background px-2 py-2 text-[#F5EAD4]"
-            style={{ fontSize: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-            rows={4}
-            spellCheck={false}
-          />
+
+          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+            <label className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-card/50 px-3 py-2">
+              <span className="text-[#F5EAD4]" style={{ fontSize: 12, fontWeight: 700 }}>
+                {t("خطط التدريب (My plan)", "Training plans (My plan)")}
+              </span>
+              <input
+                type="checkbox"
+                checked={entFlags.admin_plans}
+                onChange={(e) => setEntFlags((prev) => ({ ...prev, admin_plans: e.target.checked }))}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-card/50 px-3 py-2">
+              <span className="text-[#F5EAD4]" style={{ fontSize: 12, fontWeight: 700 }}>
+                {t("التحديات (Challenges)", "Challenges")}
+              </span>
+              <input
+                type="checkbox"
+                checked={entFlags.challenges}
+                onChange={(e) => setEntFlags((prev) => ({ ...prev, challenges: e.target.checked }))}
+              />
+            </label>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-muted-foreground" style={{ fontSize: 12 }}>
+              <input
+                type="checkbox"
+                checked={entShowAdvanced}
+                onChange={(e) => setEntShowAdvanced(e.target.checked)}
+              />
+              {t("إعدادات متقدمة (اختياري)", "Advanced (optional)")}
+            </label>
+            <span className="text-muted-foreground" style={{ fontSize: 12 }}>
+              {t(
+                "لن يظهر JSON للأدمن إلا عند تفعيل المتقدم.",
+                "JSON stays hidden unless Advanced is enabled.",
+              )}
+            </span>
+          </div>
+
+          {entShowAdvanced ? (
+            <textarea
+              value={entJson}
+              onChange={(e) => setEntJson(e.target.value)}
+              className="mt-2 w-full rounded border border-border bg-background px-2 py-2 text-[#F5EAD4]"
+              style={{ fontSize: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+              rows={6}
+              spellCheck={false}
+            />
+          ) : null}
           <div className="mt-3 flex items-center gap-2">
             <button
               type="button"
