@@ -86,6 +86,8 @@ export function Subscriptions() {
   const [pkgDescAr, setPkgDescAr] = useState("");
   const [pkgActive, setPkgActive] = useState(true);
   const [pkgSaving, setPkgSaving] = useState(false);
+  const [deletePkgId, setDeletePkgId] = useState<string | null>(null);
+  const [deletePkgBusy, setDeletePkgBusy] = useState(false);
 
   const [variantPkgId, setVariantPkgId] = useState<string>("");
   const [variantDurationDays, setVariantDurationDays] = useState(30);
@@ -188,37 +190,6 @@ export function Subscriptions() {
             title: String(p.title ?? "Plan"),
           }));
           setTrainingPlans(list);
-        }
-
-        if (bindPkgId) {
-          const bindsResp = await db
-            .from("subscription_package_plans")
-            .select("plan_id")
-            .eq("package_id", bindPkgId);
-          if (bindsResp.error) {
-            console.error("[Subscriptions] subscription_package_plans error", bindsResp.error);
-          } else {
-            const ids = new Set<string>(((bindsResp.data ?? []) as any[]).map((r) => String(r.plan_id)));
-            setBoundPlanIds(ids);
-          }
-        }
-
-        if (entPkgId) {
-          const entResp = await db
-            .from("subscription_package_entitlements")
-            .select("entitlements")
-            .eq("package_id", entPkgId)
-            .maybeSingle();
-          if (entResp.error) {
-            console.error("[Subscriptions] subscription_package_entitlements error", entResp.error);
-          } else {
-            const raw = (entResp.data as any)?.entitlements;
-            const obj = raw && typeof raw === "object" ? raw : {};
-            const admin_plans = typeof obj?.admin_plans === "boolean" ? obj.admin_plans : true;
-            const challenges = typeof obj?.challenges === "boolean" ? obj.challenges : true;
-            setEntFlags({ admin_plans, challenges });
-            setEntJson(JSON.stringify({ ...obj }, null, 2));
-          }
         }
 
         let localPricesByKey: Record<string, { priceCents: number; currency: string }> = {};
@@ -462,6 +433,72 @@ export function Subscriptions() {
     };
   }, [localizedFallback, t]);
 
+  // Load plan bindings for the selected package (avoid stale state inside loadRequests).
+  useEffect(() => {
+    if (!db || !hasFirebaseConfig) return;
+    if (!bindPkgId) {
+      setBoundPlanIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        await ensureStaffAuth();
+        const bindsResp = await db
+          .from("subscription_package_plans")
+          .select("plan_id")
+          .eq("package_id", bindPkgId);
+        if (cancelled) return;
+        if (bindsResp.error) {
+          console.error("[Subscriptions] subscription_package_plans error", bindsResp.error);
+          return;
+        }
+        const ids = new Set<string>(((bindsResp.data ?? []) as any[]).map((r) => String(r.plan_id)));
+        setBoundPlanIds(ids);
+      } catch (e) {
+        console.error("[Subscriptions] load bindings failed", e);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [bindPkgId]);
+
+  // Load entitlements for the selected package (avoid stale state inside loadRequests).
+  useEffect(() => {
+    if (!db || !hasFirebaseConfig) return;
+    if (!entPkgId) return;
+    let cancelled = false;
+    const run = async () => {
+      try {
+        await ensureStaffAuth();
+        const entResp = await db
+          .from("subscription_package_entitlements")
+          .select("entitlements")
+          .eq("package_id", entPkgId)
+          .maybeSingle();
+        if (cancelled) return;
+        if (entResp.error) {
+          console.error("[Subscriptions] subscription_package_entitlements error", entResp.error);
+          return;
+        }
+        const raw = (entResp.data as any)?.entitlements;
+        const obj = raw && typeof raw === "object" ? raw : {};
+        const admin_plans = typeof obj?.admin_plans === "boolean" ? obj.admin_plans : true;
+        const challenges = typeof obj?.challenges === "boolean" ? obj.challenges : true;
+        setEntFlags({ admin_plans, challenges });
+        setEntJson(JSON.stringify({ ...obj }, null, 2));
+      } catch (e) {
+        console.error("[Subscriptions] load entitlements failed", e);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [entPkgId]);
+
   const totalRevenueLabel = useMemo(() => {
     if (metricsRevenue) {
       return `${metricsRevenue.value.toLocaleString(lang === "ar" ? "ar-EG" : "en-US", {
@@ -621,6 +658,24 @@ export function Subscriptions() {
       setPackagesError((e as Error)?.message ?? "Failed to save package.");
     } finally {
       setPkgSaving(false);
+    }
+  };
+
+  const confirmDeletePackage = async () => {
+    if (!db || !hasFirebaseConfig) return;
+    if (!deletePkgId) return;
+    setDeletePkgBusy(true);
+    setPackagesError(null);
+    try {
+      await ensureStaffAuth();
+      const resp = await db.rpc("api_staff_delete_subscription_package", { p_package_id: deletePkgId });
+      if (resp.error) throw resp.error;
+      setDeletePkgId(null);
+      await loadRequestsRef.current?.();
+    } catch (e) {
+      setPackagesError((e as Error)?.message ?? "Failed to delete package.");
+    } finally {
+      setDeletePkgBusy(false);
     }
   };
 
@@ -1238,13 +1293,13 @@ export function Subscriptions() {
           </div>
         </div>
 
-        {packages.length ? (
+        {packages.filter((p) => p.packageActive).length ? (
           <div className="rounded-lg border border-border/70 bg-secondary/20 p-3">
             <div className="mb-2 text-[#F5EAD4]" style={{ fontSize: 13, fontWeight: 700 }}>
               {t("الباقات الحالية", "Existing packages")}
             </div>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              {packages.map((p) => (
+              {packages.filter((p) => p.packageActive).map((p) => (
                 <div key={p.packageId} className="rounded-md border border-border/60 bg-card/60 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
@@ -1268,6 +1323,18 @@ export function Subscriptions() {
                         {v.durationDays}d · {(v.priceCents / 100).toLocaleString(lang === "ar" ? "ar-EG" : "en-US")} {v.currency}
                       </span>
                     ))}
+                  </div>
+                  <div className="mt-3 flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setDeletePkgId(p.packageId)}
+                      className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-red-400 hover:border-red-500/40 hover:bg-red-500/10"
+                      style={{ fontSize: 12, fontWeight: 800 }}
+                      title={t("حذف الباقة", "Delete package")}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                      {t("حذف", "Delete")}
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1374,6 +1441,39 @@ export function Subscriptions() {
               className="inline-flex h-9 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:pointer-events-none disabled:opacity-50"
             >
               {deleteBusy ? t("جارٍ الحذف…", "Deleting…") : t("حذف نهائي", "Delete permanently")}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deletePkgId !== null} onOpenChange={(open) => !open && !deletePkgBusy && setDeletePkgId(null)}>
+        <AlertDialogContent className="border-border bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-[#F5EAD4]">
+              {t("تأكيد حذف الباقة", "Confirm delete package")}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  {t(
+                    "سيتم إيقاف الباقة وإخفاؤها من التطبيق ولوحة التحكم، مع إيقاف كل الأسعار (variants) التابعة لها.",
+                    "The package will be deactivated and hidden from both the app and dashboard, and all its variants will be disabled.",
+                  )}
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletePkgBusy} className="border-border">
+              {t("إلغاء", "Cancel")}
+            </AlertDialogCancel>
+            <button
+              type="button"
+              disabled={deletePkgBusy}
+              onClick={() => void confirmDeletePackage()}
+              className="inline-flex h-9 items-center justify-center rounded-md bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:pointer-events-none disabled:opacity-50"
+            >
+              {deletePkgBusy ? t("جارٍ الحذف…", "Deleting…") : t("حذف نهائي", "Delete")}
             </button>
           </AlertDialogFooter>
         </AlertDialogContent>
