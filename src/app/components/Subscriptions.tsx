@@ -589,6 +589,12 @@ export function Subscriptions() {
         p_active: Boolean(pkgActive),
       });
       if (resp.error) throw resp.error;
+      const newId = (resp.data ? String(resp.data) : "").trim();
+      if (newId) {
+        setVariantPkgId(newId);
+        setEntPkgId(newId);
+        setBindPkgId(newId);
+      }
       await loadRequestsRef.current?.();
     } catch (e) {
       setPackagesError((e as Error)?.message ?? "Failed to save package.");
