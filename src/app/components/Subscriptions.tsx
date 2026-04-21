@@ -79,6 +79,7 @@ export function Subscriptions() {
 
   const [packages, setPackages] = useState<PackageRow[]>([]);
   const [packagesError, setPackagesError] = useState<string | null>(null);
+  const didInitPackageSelectionsRef = useRef(false);
   const [pkgKey, setPkgKey] = useState("pro");
   const [pkgNameEn, setPkgNameEn] = useState("Pro");
   const [pkgNameAr, setPkgNameAr] = useState("برو");
@@ -109,6 +110,8 @@ export function Subscriptions() {
   const [bindPkgId, setBindPkgId] = useState<string>("");
   const [boundPlanIds, setBoundPlanIds] = useState<Set<string>>(new Set());
   const [bindingsSaving, setBindingsSaving] = useState(false);
+
+  const activePackages = useMemo(() => packages.filter((p) => p.packageActive), [packages]);
 
   useEffect(() => {
     if (!db || !hasFirebaseConfig) {
@@ -175,9 +178,20 @@ export function Subscriptions() {
               "No subscription packages found. Create a package + variant, or ensure the seed migration is applied on this Supabase project.",
             );
           }
-          if (!variantPkgId && list.length) setVariantPkgId(list[0].packageId);
-          if (!entPkgId && list.length) setEntPkgId(list[0].packageId);
-          if (!bindPkgId && list.length) setBindPkgId(list[0].packageId);
+          const active = list.filter((p) => p.packageActive);
+          const firstActiveId = active[0]?.packageId ?? "";
+          const activeIds = new Set(active.map((p) => p.packageId));
+          if (!didInitPackageSelectionsRef.current) {
+            if (!variantPkgId && firstActiveId) setVariantPkgId(firstActiveId);
+            if (!entPkgId && firstActiveId) setEntPkgId(firstActiveId);
+            if (!bindPkgId && firstActiveId) setBindPkgId(firstActiveId);
+            didInitPackageSelectionsRef.current = true;
+          } else {
+            // Keep user selection stable; only reset if it no longer exists/active.
+            if (variantPkgId && !activeIds.has(variantPkgId)) setVariantPkgId(firstActiveId);
+            if (entPkgId && !activeIds.has(entPkgId)) setEntPkgId(firstActiveId);
+            if (bindPkgId && !activeIds.has(bindPkgId)) setBindPkgId(firstActiveId);
+          }
         }
 
         // Load training plans list + current bindings (staff-only).
@@ -670,6 +684,7 @@ export function Subscriptions() {
       await ensureStaffAuth();
       const resp = await db.rpc("api_staff_delete_subscription_package", { p_package_id: deletePkgId });
       if (resp.error) throw resp.error;
+      setPackages((prev) => prev.map((p) => (p.packageId === deletePkgId ? { ...p, packageActive: false } : p)));
       setDeletePkgId(null);
       await loadRequestsRef.current?.();
     } catch (e) {
@@ -1068,7 +1083,7 @@ export function Subscriptions() {
                 style={{ fontSize: 12 }}
               >
                 <option value="">{t("اختر باقة", "Select package")}</option>
-                {packages.map((p) => (
+                {activePackages.map((p) => (
                   <option key={p.packageId} value={p.packageId}>
                     {lang === "ar" ? (p.nameAr || p.name) : p.name} ({p.packageKey})
                   </option>
@@ -1143,7 +1158,7 @@ export function Subscriptions() {
               style={{ fontSize: 12 }}
             >
               <option value="">{t("اختر باقة", "Select package")}</option>
-              {packages.map((p) => (
+              {activePackages.map((p) => (
                 <option key={p.packageId} value={p.packageId}>
                   {lang === "ar" ? (p.nameAr || p.name) : p.name} ({p.packageKey})
                 </option>
@@ -1230,14 +1245,12 @@ export function Subscriptions() {
               onChange={(e) => {
                 const next = e.target.value;
                 setBindPkgId(next);
-                // refresh bindings for the selected package on next load tick
-                void loadRequestsRef.current?.();
               }}
               className="rounded border border-border bg-background px-2 py-1.5 text-[#F5EAD4]"
               style={{ fontSize: 12 }}
             >
               <option value="">{t("اختر باقة", "Select package")}</option>
-              {packages.map((p) => (
+              {activePackages.map((p) => (
                 <option key={p.packageId} value={p.packageId}>
                   {lang === "ar" ? (p.nameAr || p.name) : p.name} ({p.packageKey})
                 </option>
