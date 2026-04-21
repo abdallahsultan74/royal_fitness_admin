@@ -61,6 +61,7 @@ export function Subscriptions() {
   const localizedFallback = useMemo<Subscription[]>(() => fallbackSubscriptions, []);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>(localizedFallback);
   const [live, setLive] = useState(false);
+  const [showLegacyPricing, setShowLegacyPricing] = useState(false);
   const [pendingId, setPendingId] = useState<string | number | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [debugPendingCount, setDebugPendingCount] = useState<number | null>(null);
@@ -163,6 +164,11 @@ export function Subscriptions() {
             p.variants.sort((a, b) => a.durationDays - b.durationDays);
           });
           setPackages(list);
+          if (list.length === 0) {
+            setPackagesError(
+              "No subscription packages found. Create a package + variant, or ensure the seed migration is applied on this Supabase project.",
+            );
+          }
           if (!variantPkgId && list.length) setVariantPkgId(list[0].packageId);
           if (!entPkgId && list.length) setEntPkgId(list[0].packageId);
           if (!bindPkgId && list.length) setBindPkgId(list[0].packageId);
@@ -761,6 +767,16 @@ export function Subscriptions() {
             {live ? t("بيانات حية", "Live data") : t("بيانات تجريبية", "Demo data")}
           </span>
         </p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-muted-foreground" style={{ fontSize: 12 }}>
+            <input
+              type="checkbox"
+              checked={showLegacyPricing}
+              onChange={(e) => setShowLegacyPricing(e.target.checked)}
+            />
+            {t("إظهار التسعير القديم (اختياري)", "Show legacy pricing (optional)")}
+          </label>
+        </div>
         {authError ? (
           <div className="mt-3 text-red-400" style={{ fontSize: 13 }}>
             {authError}
@@ -793,79 +809,86 @@ export function Subscriptions() {
         </div>
       </div>
 
-      <div className="space-y-3 rounded-xl border border-border bg-card p-4">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-[#F5EAD4]" style={{ fontSize: 15, fontWeight: 700 }}>
-            {t("تسعير الاشتراكات (يحدده الأدمن/المدرب)", "Subscription pricing (admin/coach)")}
-          </h2>
-          <p className="text-muted-foreground" style={{ fontSize: 12 }}>
-            {t("السعر المستخدم في الإيرادات يتم حفظه وقت الموافقة على الطلب.", "Revenue uses the price stored at approval time.")}
-          </p>
+      {showLegacyPricing ? (
+        <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-[#F5EAD4]" style={{ fontSize: 15, fontWeight: 700 }}>
+              {t("التسعير القديم (plan_key) - اختياري", "Legacy pricing (plan_key) - optional")}
+            </h2>
+            <p className="text-muted-foreground" style={{ fontSize: 12 }}>
+              {t(
+                "لو بتستخدم نظام الباقات الجديد، تجاهل هذا القسم وخلي التسعير من Variants.",
+                "If you use Packages+Variants, ignore this section and price via Variants.",
+              )}
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <label className="space-y-1">
+              <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("مفتاح الخطة", "Plan key")}</span>
+              <input
+                value={pricePlanKey}
+                onChange={(e) => setPricePlanKey(e.target.value)}
+                className="w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4]"
+                style={{ fontSize: 13 }}
+                placeholder="pro"
+                dir="ltr"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-muted-foreground" style={{ fontSize: 12 }}>
+                {t("مدة الاشتراك بالأيام", "Duration (days)")}
+              </span>
+              <input
+                value={priceDurationDays}
+                onChange={(e) => setPriceDurationDays(Number(e.target.value) || 30)}
+                className="w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4]"
+                style={{ fontSize: 13 }}
+                type="number"
+                min={1}
+                dir="ltr"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("العملة", "Currency")}</span>
+              <input
+                value={priceCurrency}
+                onChange={(e) => setPriceCurrency(e.target.value)}
+                className="w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4]"
+                style={{ fontSize: 13 }}
+                placeholder="EGP"
+                dir="ltr"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("السعر", "Price")}</span>
+              <input
+                value={priceAmount}
+                onChange={(e) => setPriceAmount(Number(e.target.value) || 0)}
+                className="w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4]"
+                style={{ fontSize: 13 }}
+                type="number"
+                min={0}
+                step={0.5}
+                dir="ltr"
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              disabled={!live || !db || !hasFirebaseConfig || priceSaving}
+              onClick={() => void savePlanPrice()}
+              className="inline-flex items-center justify-center rounded-lg bg-[#D4AF37] px-4 py-2 text-[#0B1B14] hover:brightness-110 disabled:opacity-60"
+              style={{ fontSize: 13, fontWeight: 800 }}
+            >
+              {priceSaving ? t("جارٍ الحفظ…", "Saving…") : t("حفظ السعر", "Save price")}
+            </button>
+            <span className="text-muted-foreground" style={{ fontSize: 12 }}>
+              {t("مثال: pro / basic / trial", "Example: pro / basic / trial")}
+            </span>
+          </div>
         </div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-          <label className="space-y-1">
-            <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("الخطة", "Plan key")}</span>
-            <input
-              value={pricePlanKey}
-              onChange={(e) => setPricePlanKey(e.target.value)}
-              className="w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4]"
-              style={{ fontSize: 13 }}
-              placeholder="pro"
-              dir="ltr"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("المدة (أيام)", "Duration (days)")}</span>
-            <input
-              value={priceDurationDays}
-              onChange={(e) => setPriceDurationDays(Number(e.target.value) || 30)}
-              className="w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4]"
-              style={{ fontSize: 13 }}
-              type="number"
-              min={1}
-              dir="ltr"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("العملة", "Currency")}</span>
-            <input
-              value={priceCurrency}
-              onChange={(e) => setPriceCurrency(e.target.value)}
-              className="w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4]"
-              style={{ fontSize: 13 }}
-              placeholder="EGP"
-              dir="ltr"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-muted-foreground" style={{ fontSize: 12 }}>{t("السعر", "Price")}</span>
-            <input
-              value={priceAmount}
-              onChange={(e) => setPriceAmount(Number(e.target.value) || 0)}
-              className="w-full rounded-lg bg-secondary border border-border px-3 py-2 text-[#F5EAD4]"
-              style={{ fontSize: 13 }}
-              type="number"
-              min={0}
-              step={0.5}
-              dir="ltr"
-            />
-          </label>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            disabled={!live || !db || !hasFirebaseConfig || priceSaving}
-            onClick={() => void savePlanPrice()}
-            className="inline-flex items-center justify-center rounded-lg bg-[#D4AF37] px-4 py-2 text-[#0B1B14] hover:brightness-110 disabled:opacity-60"
-            style={{ fontSize: 13, fontWeight: 800 }}
-          >
-            {priceSaving ? t("جارٍ الحفظ…", "Saving…") : t("حفظ السعر", "Save price")}
-          </button>
-          <span className="text-muted-foreground" style={{ fontSize: 12 }}>
-            {t("مثال مفاتيح الخطط: pro / basic / trial", "Example keys: pro / basic / trial")}
-          </span>
-        </div>
-      </div>
+      ) : null}
 
       <div className="space-y-3 rounded-xl border border-border bg-card p-4">
         <div className="flex flex-col gap-1">
@@ -980,7 +1003,7 @@ export function Subscriptions() {
                 style={{ fontSize: 12 }}
                 type="number"
                 min={1}
-                placeholder={t("أيام", "Days")}
+                placeholder={t("مدة الاشتراك بالأيام", "Duration in days")}
               />
               <input
                 value={variantCurrency}
@@ -997,7 +1020,7 @@ export function Subscriptions() {
                 type="number"
                 min={0}
                 step={0.5}
-                placeholder={t("السعر", "Price")}
+                placeholder={t("السعر (مثال: 550)", "Price (e.g. 550)")}
               />
             </div>
             <div className="mt-3 flex items-center gap-2">
@@ -1009,6 +1032,15 @@ export function Subscriptions() {
                 style={{ fontSize: 12, fontWeight: 800 }}
               >
                 {variantSaving ? t("جارٍ الحفظ…", "Saving…") : t("حفظ المدة", "Save variant")}
+              </button>
+              <button
+                type="button"
+                disabled={!live}
+                onClick={() => void loadRequestsRef.current?.()}
+                className="inline-flex items-center justify-center rounded-lg border border-border px-4 py-2 text-muted-foreground hover:text-[#D4AF37] hover:border-[#D4AF37]/30 disabled:opacity-60"
+                style={{ fontSize: 12, fontWeight: 700 }}
+              >
+                {t("تحديث", "Refresh")}
               </button>
               <span className="text-muted-foreground" style={{ fontSize: 12 }}>
                 {t("يمكن إضافة أكثر من مدة لنفس الباقة.", "You can add multiple durations per package.")}
