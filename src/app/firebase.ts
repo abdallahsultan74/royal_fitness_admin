@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { localAuthEnabled } from "./buildConfig";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -13,7 +14,7 @@ const adminEmail = import.meta.env.VITE_ADMIN_EMAIL as string | undefined;
 const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD as string | undefined;
 
 /** When true, login UI uses localStorage only; staff checks should not require env bot credentials. */
-export const isLocalAuthMode = import.meta.env.VITE_LOCAL_AUTH === "true";
+export const isLocalAuthMode = localAuthEnabled;
 
 let staffAuthPromise: Promise<boolean> | null = null;
 let adminAuthPromise: Promise<boolean> | null = null;

@@ -3,6 +3,7 @@ import { Search, MoreHorizontal, Shield, ShieldOff, Mail, Eye, UserPlus, Trash2 
 import { useNavigate, useSearchParams } from "react-router";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, getIsAdmin, hasFirebaseConfig } from "../firebase";
+import { adminDelivery } from "../buildConfig";
 import { normalizePlanKey, textMatchesQuery } from "../searchUtils";
 import { formatRelativeTime } from "../time";
 import {
@@ -382,7 +383,11 @@ export function UserManagement() {
         <p className="text-muted-foreground text-sm sm:text-[14px]">
           {t(`إدارة جميع المستخدمين المسجلين (${users.length} مستخدم)`, `Manage all registered users (${users.length} total)`)} ·{" "}
           <span className={live ? "text-emerald-400" : "text-amber-400"}>
-            {live ? t("متصل بـ Supabase", "Connected to Supabase") : t("وضع تجريبي محلي", "Local demo mode")}
+            {live
+              ? t("متصل", "Connected")
+              : adminDelivery
+                ? t("غير متصل", "Offline")
+                : t("وضع تجريبي محلي", "Local demo mode")}
           </span>
         </p>
       </div>

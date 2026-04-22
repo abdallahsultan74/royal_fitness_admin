@@ -63,6 +63,7 @@ Required `.env` values for live mode:
 
 Optional:
 - `VITE_LOCAL_AUTH=true` to force local/demo mode
+- `VITE_ADMIN_DELIVERY=true` for handover builds (disables local/demo auth and hides demo/live labels)
 
 ---
 

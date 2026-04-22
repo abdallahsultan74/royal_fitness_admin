@@ -24,6 +24,7 @@ import {
   AreaChart,
 } from "recharts";
 import { useLang } from "./LanguageContext";
+import { adminDelivery } from "../buildConfig";
 import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
 import { useNavigate } from "react-router";
 import { formatRelativeTime } from "../time";
@@ -335,7 +336,11 @@ export function Dashboard() {
           )}{" "}
           ·{" "}
           <span className={dataLive ? "text-emerald-400" : "text-amber-400"}>
-            {dataLive ? t("بيانات حية + Realtime", "Live data + realtime") : t("في انتظار الاتصال…", "Waiting for data…")}
+            {dataLive
+              ? t("متصل", "Connected")
+              : adminDelivery
+                ? t("غير متصل", "Offline")
+                : t("في انتظار الاتصال…", "Waiting for data…")}
           </span>
         </p>
       </div>

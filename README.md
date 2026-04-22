@@ -44,6 +44,13 @@ Required for live mode:
 Optional (useful for demo/testing):
 - `VITE_LOCAL_AUTH=true` to force local/demo mode
 
+## Admin delivery build
+
+For handover builds, enable:
+- `VITE_ADMIN_DELIVERY=true`
+
+This ensures local/demo auth mode is **disabled** even if `VITE_LOCAL_AUTH` is set, and the UI avoids showing demo/live/sync labels intended for development.
+
 ## Run locally
 
 ```bash

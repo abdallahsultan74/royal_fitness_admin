@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Save, Trash2, UserMinus, Users } from "lucide-react";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
+import { adminDelivery } from "../buildConfig";
 import { PlanJsonEditor, normalizePlanJson, serializePlanJson, type PlanJsonDraft } from "./PlanJsonEditor";
 
 type PlanRow = {
@@ -357,7 +358,11 @@ export function Plans() {
           <p className="text-muted-foreground text-sm" style={{ fontSize: 13 }}>
             {t("إنشاء خطط وإسنادها للمستخدمين.", "Create training plans and assign them to users.")} ·{" "}
             <span className={live ? "text-emerald-400" : "text-amber-400"}>
-              {live ? t("متصل + Realtime", "Connected + realtime") : t("غير متصل", "Not connected")}
+              {live
+                ? t("متصل", "Connected")
+                : adminDelivery
+                  ? t("غير متصل", "Offline")
+                  : t("غير متصل", "Not connected")}
             </span>
           </p>
         </div>

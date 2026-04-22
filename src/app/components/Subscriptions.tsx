@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, hasFirebaseConfig, isLocalAuthMode } from "../firebase";
+import { adminDelivery } from "../buildConfig";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -897,7 +898,11 @@ export function Subscriptions() {
         <p className="text-muted-foreground text-sm sm:text-[14px]">
           {t("إدارة خطط الاشتراك وتجديداتها", "Manage plans, renewals, and billing status")} ·{" "}
           <span className={live ? "text-emerald-400" : "text-amber-400"}>
-            {live ? t("بيانات حية", "Live data") : t("بيانات تجريبية", "Demo data")}
+            {live
+              ? t("متصل", "Connected")
+              : adminDelivery
+                ? t("غير متصل", "Offline")
+                : t("بيانات تجريبية", "Demo data")}
           </span>
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-3">

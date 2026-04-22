@@ -3,6 +3,7 @@ import { Search, Plus, Edit3, Trash2, Eye, ChevronDown, Filter, Upload, Mic, Squ
 import { useSearchParams } from "react-router";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
+import { adminDelivery } from "../buildConfig";
 import { bilingualOptionMatches, normalizeForSearch, textMatchesQuery } from "../searchUtils";
 
 const exercisesFallback = {
@@ -760,7 +761,11 @@ export function ExerciseManagement() {
           <p className="text-muted-foreground text-sm sm:text-[14px]">
             {t(`إدارة مكتبة التمارين الخاصة بك (${exercises.length} تمرين)`, `Manage your exercise library (${exercises.length} exercises)`)} ·{" "}
             <span className={live ? "text-emerald-400" : "text-amber-400"}>
-              {live ? t("مربوط ببيانات التطبيق", "Synced with app data") : t("وضع تجريبي محلي", "Local demo mode")}
+            {live
+              ? t("متصل", "Connected")
+              : adminDelivery
+                ? t("غير متصل", "Offline")
+                : t("وضع تجريبي محلي", "Local demo mode")}
             </span>
             {busyUpload ? ` · ${t("جارٍ رفع الميديا...", "Uploading media...")}` : ""}
           </p>

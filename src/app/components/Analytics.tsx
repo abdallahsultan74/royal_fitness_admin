@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useLang } from "./LanguageContext";
 import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
+import { adminDelivery } from "../buildConfig";
 
 type Point = { name: string; users: number; workouts: number };
 
@@ -141,7 +142,11 @@ export function Analytics() {
         <p className="text-muted-foreground text-sm sm:text-[14px]">
           {t("مؤشرات أداء التطبيق والاستخدام", "Usage and product performance metrics")} ·{" "}
           <span className={live ? "text-emerald-400" : "text-amber-400"}>
-            {live ? t("بيانات حية", "Live data") : t("بيانات تقديرية", "Estimated data")}
+            {live
+              ? t("متصل", "Connected")
+              : adminDelivery
+                ? t("غير متصل", "Offline")
+                : t("بيانات تقديرية", "Estimated data")}
           </span>
         </p>
       </div>

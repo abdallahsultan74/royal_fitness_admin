@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { User } from "@supabase/supabase-js";
 import { db, hasFirebaseConfig } from "../firebase";
+import { localAuthEnabled } from "../buildConfig";
 
 type AdminUser = {
   uid: string;
@@ -30,7 +31,7 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 const STORAGE_KEY = "royal_admin_auth";
-const forceLocalAuth = import.meta.env.VITE_LOCAL_AUTH === "true";
+const forceLocalAuth = localAuthEnabled;
 
 function mapAuthUser(firebaseUser: User): AdminUser {
   return {
