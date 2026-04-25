@@ -105,12 +105,22 @@ export function UserManagement() {
               ? "الآن"
               : "Just now";
 
+        const dobRaw = data.date_of_birth?.toString?.() ?? null;
+        const ageYears =
+          typeof data.age_years === "number"
+            ? data.age_years
+            : data.age_years != null
+              ? Number(data.age_years)
+              : null;
+
         return {
           id: data.user_id,
           name,
           email,
           plan,
           role,
+          dateOfBirth: dobRaw,
+          ageYears: Number.isFinite(Number(ageYears)) ? Number(ageYears) : null,
           weight: data.current_weight_kg,
           bmi: data.bmi,
           targetWeight: data.target_weight_kg,
@@ -208,6 +218,8 @@ export function UserManagement() {
         roleLabel(u.role),
         u.plan,
         formatPlanCell(String(u.plan)),
+        u.dateOfBirth ? String(u.dateOfBirth) : "",
+        u.ageYears != null ? String(u.ageYears) : "",
         u.challenge ? String(u.challenge) : "",
         String(u.weight ?? ""),
         String(u.bmi ?? ""),
@@ -227,8 +239,8 @@ export function UserManagement() {
   ];
 
   const headers = lang === "ar"
-    ? ["الصورة", "الاسم", "الدور", "البريد الإلكتروني", "الخطة", "الوزن", "BMI", "التحدي", "آخر نشاط", "الحالة", "الإجراءات"]
-    : ["Profile", "Name", "Role", "Email", "Plan", "Weight", "BMI", "Challenge", "Last Active", "Status", "Actions"];
+    ? ["الصورة", "الاسم", "الدور", "البريد الإلكتروني", "تاريخ الميلاد", "العمر", "الخطة", "الوزن", "BMI", "التحدي", "آخر نشاط", "الحالة", "الإجراءات"]
+    : ["Profile", "Name", "Role", "Email", "Date of birth", "Age", "Plan", "Weight", "BMI", "Challenge", "Last Active", "Status", "Actions"];
 
   const roleStyle = (roleRaw: string) => {
     const r = (roleRaw ?? "user").toString().trim().toLowerCase();
@@ -616,7 +628,7 @@ export function UserManagement() {
       {/* Table */}
       <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px]">
+          <table className="w-full min-w-[1120px]">
           <thead>
             <tr className="border-b border-border">
               {headers.map((h) => (
@@ -641,6 +653,16 @@ export function UserManagement() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground" dir="ltr" style={{ fontSize: 13, textAlign: "start" }}>{u.email}</td>
+                <td className="px-4 py-3">
+                  <span className="text-muted-foreground" style={{ fontSize: 12 }} dir="ltr">
+                    {u.dateOfBirth ? String(u.dateOfBirth).slice(0, 10) : "--"}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="text-muted-foreground" style={{ fontSize: 12 }}>
+                    {u.ageYears != null ? String(u.ageYears) : "--"}
+                  </span>
+                </td>
                 <td className="px-4 py-3">
                   <span className={`px-2.5 py-1 rounded-full ${planBadgeClass(String(u.plan))}`} style={{ fontSize: 11 }}>
                     {formatPlanCell(String(u.plan))}

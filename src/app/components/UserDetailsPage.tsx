@@ -14,6 +14,7 @@ type ProfileRow = {
   status: string | null;
   role: string | null;
   whatsapp_phone: string | null;
+  date_of_birth?: string | null;
   height_cm?: number | null;
   current_weight_kg?: number | null;
   target_weight_kg?: number | null;
@@ -79,6 +80,18 @@ function normalizeWhatsappToE164Digits(raw: string) {
 
   // wa.me requires digits only (no +)
   return digits.replace(/\D/g, "");
+}
+
+function ageYearsFromDob(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const dt = new Date(raw);
+  if (Number.isNaN(dt.getTime())) return null;
+  const now = new Date();
+  let years = now.getFullYear() - dt.getFullYear();
+  const hadBirthday =
+    now.getMonth() > dt.getMonth() || (now.getMonth() === dt.getMonth() && now.getDate() >= dt.getDate());
+  if (!hadBirthday) years -= 1;
+  return years < 0 ? 0 : years;
 }
 
 export function UserDetailsPage() {
@@ -158,6 +171,19 @@ export function UserDetailsPage() {
     () => formatCreatedAtLabel(profile?.created_at, lang === "ar" ? "ar" : "en"),
     [profile?.created_at, lang],
   );
+
+  const dobLabel = useMemo(() => {
+    const raw = profile?.date_of_birth;
+    if (!raw) return "—";
+    // Usually YYYY-MM-DD
+    return String(raw).slice(0, 10);
+  }, [profile?.date_of_birth]);
+
+  const ageLabel = useMemo(() => {
+    const years = ageYearsFromDob(profile?.date_of_birth);
+    if (years == null) return "—";
+    return String(years);
+  }, [profile?.date_of_birth]);
 
   const bmiLabel = useMemo(() => {
     const v = profile?.bmi;
@@ -336,6 +362,17 @@ export function UserDetailsPage() {
           <p className="text-[#F5EAD4] text-xl font-semibold sm:text-2xl">
             {profile?.target_weight_kg ? `${Number(profile.target_weight_kg).toFixed(1)} kg` : "—"}
           </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
+        <div className="rounded-xl border border-border bg-card p-3 sm:p-4">
+          <p className="text-muted-foreground text-xs">{t("تاريخ الميلاد", "Date of birth")}</p>
+          <p className="text-[#F5EAD4] text-xl font-semibold sm:text-2xl" dir="ltr">{dobLabel}</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3 sm:p-4">
+          <p className="text-muted-foreground text-xs">{t("العمر", "Age")}</p>
+          <p className="text-[#D4AF37] text-xl font-semibold sm:text-2xl">{ageLabel}</p>
         </div>
       </div>
 
