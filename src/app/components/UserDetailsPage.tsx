@@ -110,6 +110,7 @@ export function UserDetailsPage() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [roleDraft, setRoleDraft] = useState<string>("user");
   const [whatsDraft, setWhatsDraft] = useState<string>("");
+  const [dobDraft, setDobDraft] = useState<string>("");
   const [msgType, setMsgType] = useState<"notification" | "message">("notification");
   const [msgTitle, setMsgTitle] = useState<string>("");
   const [msgBody, setMsgBody] = useState<string>("");
@@ -141,6 +142,7 @@ export function UserDetailsPage() {
       setProfile(prof);
       setRoleDraft(String(prof?.role ?? "user"));
       setWhatsDraft(String(prof?.whatsapp_phone ?? ""));
+      setDobDraft(String(prof?.date_of_birth ?? "").slice(0, 10));
       setPlanDraft(String(prof?.plan ?? "basic"));
       const pe = prof?.plan_expires_at as string | null | undefined;
       if (pe) {
@@ -230,6 +232,7 @@ export function UserDetailsPage() {
       await ensureStaffAuth();
       const nextRole = ["user", "coach", "admin"].includes(roleDraft) ? roleDraft : "user";
       const nextWhats = whatsDraft.trim() || null;
+      const nextDob = dobDraft.trim() ? dobDraft.trim() : null;
       const feature_flags = {
         admin_plans: adminPlansEnabled,
         challenges: challengesEnabled,
@@ -242,6 +245,7 @@ export function UserDetailsPage() {
         .update({
           role: nextRole,
           whatsapp_phone: nextWhats,
+          date_of_birth: nextDob,
           plan: planDraft.trim() || "basic",
           plan_expires_at: planExpiresIso,
           feature_flags,
@@ -257,6 +261,7 @@ export function UserDetailsPage() {
               ...p,
               role: nextRole,
               whatsapp_phone: nextWhats,
+              date_of_birth: nextDob,
               plan: planDraft.trim() || "basic",
               plan_expires_at: planExpiresIso,
               feature_flags,
@@ -476,6 +481,17 @@ export function UserDetailsPage() {
                     style={{ fontSize: 12 }}
                     dir="ltr"
                     placeholder={t("رقم واتساب", "WhatsApp number")}
+                  />
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">{t("تاريخ الميلاد", "Date of birth")}</span>
+                  <input
+                    type="date"
+                    value={dobDraft}
+                    onChange={(e) => setDobDraft(e.target.value)}
+                    className="w-[220px] max-w-[60vw] rounded-md border border-border bg-card px-2 py-1 text-[#F5EAD4]"
+                    style={{ fontSize: 12 }}
+                    dir="ltr"
                   />
                 </div>
                 <div className="pt-2">

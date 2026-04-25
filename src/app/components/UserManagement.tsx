@@ -67,6 +67,9 @@ export function UserManagement() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [editingDobId, setEditingDobId] = useState<string | null>(null);
+  const [dobDraftById, setDobDraftById] = useState<Record<string, string>>({});
+  const [dobBusyId, setDobBusyId] = useState<string | null>(null);
   // Activity details are now shown on a dedicated user details page.
 
   useEffect(() => {
@@ -275,6 +278,40 @@ export function UserManagement() {
     } finally {
       setPendingId(null);
     }
+  };
+
+  const beginDobEdit = (userId: string, currentDob: string | null) => {
+    setEditingDobId(userId);
+    setDobDraftById((prev) => ({
+      ...prev,
+      [userId]: (currentDob ?? "").toString().slice(0, 10),
+    }));
+  };
+
+  const saveDob = async (userId: string) => {
+    if (!db || !hasFirebaseConfig) return;
+    const next = (dobDraftById[userId] ?? "").trim();
+    const dob = next ? next : null;
+    setDobBusyId(userId);
+    try {
+      await ensureStaffAuth();
+      const resp = await db.from("profiles").update({ date_of_birth: dob }).eq("id", userId);
+      if (resp.error) throw resp.error;
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, dateOfBirth: dob } : u)),
+      );
+      setEditingDobId(null);
+    } catch (e) {
+      console.error("[UserManagement] saveDob", e);
+      // keep edit mode so user can retry
+    } finally {
+      setDobBusyId(null);
+    }
+  };
+
+  const clearDob = async (userId: string) => {
+    setDobDraftById((prev) => ({ ...prev, [userId]: "" }));
+    await saveDob(userId);
   };
 
   const requestDeleteUser = (u: any) => {
@@ -654,9 +691,54 @@ export function UserManagement() {
                 </td>
                 <td className="px-4 py-3 text-muted-foreground" dir="ltr" style={{ fontSize: 13, textAlign: "start" }}>{u.email}</td>
                 <td className="px-4 py-3">
-                  <span className="text-muted-foreground" style={{ fontSize: 12 }} dir="ltr">
-                    {u.dateOfBirth ? String(u.dateOfBirth).slice(0, 10) : "--"}
-                  </span>
+                  {live && typeof u.id === "string" && editingDobId === u.id ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="date"
+                        value={dobDraftById[u.id] ?? ""}
+                        onChange={(e) =>
+                          setDobDraftById((prev) => ({ ...prev, [u.id]: e.target.value }))
+                        }
+                        className="rounded-md border border-border bg-secondary px-2 py-1 text-[#F5EAD4]"
+                        style={{ fontSize: 12 }}
+                        dir="ltr"
+                      />
+                      <button
+                        type="button"
+                        disabled={dobBusyId === u.id}
+                        onClick={() => void saveDob(u.id)}
+                        className="rounded-md border border-border bg-card px-2 py-1 text-muted-foreground hover:text-[#D4AF37] disabled:opacity-50"
+                        style={{ fontSize: 12 }}
+                        title={t("حفظ", "Save")}
+                      >
+                        {t("حفظ", "Save")}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={dobBusyId === u.id}
+                        onClick={() => void clearDob(u.id)}
+                        className="rounded-md border border-border bg-card px-2 py-1 text-muted-foreground hover:text-red-300 disabled:opacity-50"
+                        style={{ fontSize: 12 }}
+                        title={t("مسح", "Clear")}
+                      >
+                        {t("مسح", "Clear")}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        typeof u.id === "string"
+                          ? beginDobEdit(u.id, u.dateOfBirth ?? null)
+                          : undefined
+                      }
+                      className="text-muted-foreground hover:text-[#D4AF37]"
+                      style={{ fontSize: 12 }}
+                      title={t("تعديل", "Edit")}
+                    >
+                      <span dir="ltr">{u.dateOfBirth ? String(u.dateOfBirth).slice(0, 10) : "--"}</span>
+                    </button>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-muted-foreground" style={{ fontSize: 12 }}>
