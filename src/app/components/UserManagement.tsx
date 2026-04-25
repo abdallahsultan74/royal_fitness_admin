@@ -280,6 +280,18 @@ export function UserManagement() {
     }
   };
 
+  const ageYearsFromDob = (raw: string | null | undefined): number | null => {
+    if (!raw) return null;
+    const dt = new Date(raw);
+    if (Number.isNaN(dt.getTime())) return null;
+    const now = new Date();
+    let years = now.getFullYear() - dt.getFullYear();
+    const hadBirthday =
+      now.getMonth() > dt.getMonth() || (now.getMonth() === dt.getMonth() && now.getDate() >= dt.getDate());
+    if (!hadBirthday) years -= 1;
+    return years < 0 ? 0 : years;
+  };
+
   const beginDobEdit = (userId: string, currentDob: string | null) => {
     setEditingDobId(userId);
     setDobDraftById((prev) => ({
@@ -298,7 +310,15 @@ export function UserManagement() {
       const resp = await db.from("profiles").update({ date_of_birth: dob }).eq("id", userId);
       if (resp.error) throw resp.error;
       setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, dateOfBirth: dob } : u)),
+        prev.map((u) =>
+          u.id === userId
+            ? {
+                ...u,
+                dateOfBirth: dob,
+                ageYears: ageYearsFromDob(dob),
+              }
+            : u,
+        ),
       );
       setEditingDobId(null);
     } catch (e) {
