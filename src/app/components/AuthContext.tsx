@@ -1,6 +1,6 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { User } from "@supabase/supabase-js";
-import { db, hasFirebaseConfig } from "../firebase";
+import { db, getIsStaff, hasFirebaseConfig } from "../firebase";
 import { localAuthEnabled } from "../buildConfig";
 
 type AdminUser = {
@@ -59,17 +59,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    db.auth.getSession().then(({ data }) => {
-      const current = data.session?.user ?? null;
-      setUser(current ? mapAuthUser(current) : null);
-      setLoading(false);
-    });
+    let cancelled = false;
+
+    const syncFromSession = async (sessionUser: User | null) => {
+      if (!sessionUser) {
+        if (!cancelled) setUser(null);
+        return;
+      }
+      const ok = await getIsStaff();
+      if (!ok) {
+        try {
+          await db.auth.signOut();
+        } catch {
+          /* ignore */
+        }
+        if (!cancelled) setUser(null);
+        return;
+      }
+      if (!cancelled) setUser(mapAuthUser(sessionUser));
+    };
+
+    db.auth
+      .getSession()
+      .then(({ data }) => syncFromSession(data.session?.user ?? null))
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
     const { data: listener } = db.auth.onAuthStateChange((_event, session) => {
-      const current = session?.user ?? null;
-      setUser(current ? mapAuthUser(current) : null);
-      setLoading(false);
+      syncFromSession(session?.user ?? null).finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     });
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      listener.subscription.unsubscribe();
+    };
   }, [canUseRemoteAuth]);
 
   const login = async ({ email, password }: LoginPayload) => {
@@ -88,9 +113,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const response = await db.auth.signInWithPassword({ email, password });
     if (response.error) throw response.error;
-    if (response.data.user) {
-      setUser(mapAuthUser(response.data.user));
+    const ok = await getIsStaff();
+    if (!ok) {
+      try {
+        await db.auth.signOut();
+      } catch {
+        /* ignore */
+      }
+      setUser(null);
+      throw new Error("USER_NOT_ALLOWED");
     }
+    if (response.data.user) setUser(mapAuthUser(response.data.user));
   };
 
   const logout = async () => {

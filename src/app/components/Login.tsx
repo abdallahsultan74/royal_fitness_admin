@@ -29,6 +29,8 @@ export function Login() {
         setError(t("يرجى إدخال البريد وكلمة المرور.", "Please enter email and password."));
       } else if (err instanceof Error && err.message === "SUPABASE_NOT_CONFIGURED") {
         setError(t("إعدادات Supabase غير مكتملة.", "Supabase configuration is missing."));
+      } else if (err instanceof Error && err.message === "USER_NOT_ALLOWED") {
+        setError(t("هذا الحساب ليس أدمن/مدرب ولا يمكنه دخول لوحة الإدارة.", "This account is not staff and cannot access the admin panel."));
       } else {
         setError(t("فشل تسجيل الدخول، تحقق من البيانات.", "Login failed, check your credentials."));
       }
