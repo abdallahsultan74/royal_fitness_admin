@@ -57,6 +57,24 @@ function isDirectVideoUrl(rawUrl: string): boolean {
   );
 }
 
+function normalizeMediaUrl(rawUrl: string): string {
+  const s = rawUrl.trim();
+  if (!s) return "";
+  // Accept scheme-less links pasted by admins (e.g. "youtu.be/...", "www.youtube.com/...")
+  if (/^https?:\/\//i.test(s)) return s;
+  if (/^(www\.)/i.test(s)) return `https://${s}`;
+  if (/^(youtu\.be\/|youtube\.com\/)/i.test(s)) return `https://${s}`;
+  if (/^(vimeo\.com\/)/i.test(s)) return `https://${s}`;
+  return s;
+}
+
+function looksLikeVideoLink(rawUrl: string): boolean {
+  const s = rawUrl.trim().toLowerCase();
+  if (!s) return false;
+  if (s.includes("youtube.com") || s.includes("youtu.be") || s.includes("vimeo.com")) return true;
+  return isDirectVideoUrl(s);
+}
+
 function videoThumbUrl(rawUrl: string): string | null {
   const yt = parseYouTubeId(rawUrl);
   if (yt) return `https://img.youtube.com/vi/${yt}/hqdefault.jpg`;
@@ -640,7 +658,7 @@ export function ExerciseManagement() {
       target: form.target.trim(),
       equipment: form.equipment.trim(),
       difficulty: form.difficulty.trim(),
-      gifUrl: form.gifUrl.trim(),
+      gifUrl: normalizeMediaUrl(form.gifUrl),
       thumbnailUrl: form.thumbnailUrl.trim(),
       minutes: Number.parseInt(form.minutes.trim() || "1", 10),
       audioUrl: form.audioUrl.trim(),
@@ -685,7 +703,7 @@ export function ExerciseManagement() {
     await ensureStaffAuth();
     setBusyUpload(true);
     let mediaUrl = input.gifUrl || null;
-    let mediaType: "image" | "video" = "image";
+    let mediaType: "image" | "video" = looksLikeVideoLink(input.gifUrl) ? "video" : "image";
     let audioUrl = input.audioUrl || null;
     try {
       if (selectedMediaFile) {
@@ -733,7 +751,7 @@ export function ExerciseManagement() {
       target: form.target.trim(),
       equipment: form.equipment.trim(),
       difficulty: form.difficulty.trim(),
-      gifUrl: form.gifUrl.trim(),
+      gifUrl: normalizeMediaUrl(form.gifUrl),
       thumbnailUrl: form.thumbnailUrl.trim(),
       minutes: Number.parseInt(form.minutes.trim() || "1", 10),
       audioUrl: form.audioUrl.trim(),
@@ -776,10 +794,12 @@ export function ExerciseManagement() {
       await ensureStaffAuth();
       setBusyUpload(true);
       let mediaUrl = input.gifUrl || exercise.gifUrl || null;
-      let mediaType: "image" | "video" = exercise.mediaType ?? "image";
+      let mediaType: "image" | "video" =
+        selectedMediaFile
+          ? (selectedMediaFile.type.startsWith("video/") ? "video" : "image")
+          : looksLikeVideoLink(input.gifUrl || mediaUrl || "") ? "video" : (exercise.mediaType ?? "image");
       let audioUrl = input.audioUrl || exercise.audioUrl || null;
       if (selectedMediaFile) {
-        mediaType = selectedMediaFile.type.startsWith("video/") ? "video" : "image";
         mediaUrl = await uploadFile(selectedMediaFile, "media");
       }
       if (selectedAudioFile) {
