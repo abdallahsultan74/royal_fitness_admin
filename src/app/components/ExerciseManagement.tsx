@@ -253,7 +253,9 @@ type ExerciseFormState = {
   target: string;
   equipment: string;
   difficulty: string;
+  minutes: string;
   gifUrl: string;
+  thumbnailUrl: string;
   audioUrl: string;
   ttsScript: string;
   ttsScriptAr: string;
@@ -313,7 +315,9 @@ export function ExerciseManagement() {
     target: lang === "ar" ? "الصدر" : "Chest",
     equipment: lang === "ar" ? "وزن الجسم" : "Bodyweight",
     difficulty: fd.difficulty[1] ?? fd.all,
+    minutes: "1",
     gifUrl: "",
+    thumbnailUrl: "",
     audioUrl: "",
     ttsScript: "",
     ttsScriptAr: "",
@@ -472,7 +476,9 @@ export function ExerciseManagement() {
       target: lang === "ar" ? "الصدر" : "Chest",
       equipment: lang === "ar" ? "وزن الجسم" : "Bodyweight",
       difficulty: fd.difficulty[1] ?? fd.all,
+      minutes: "1",
       gifUrl: "",
+      thumbnailUrl: "",
       audioUrl: "",
       ttsScript: "",
       ttsScriptAr: "",
@@ -493,6 +499,8 @@ export function ExerciseManagement() {
       equipment: exercise.equipment,
       difficulty: exercise.difficulty,
       gifUrl: exercise.gifUrl ?? "",
+      thumbnailUrl: exercise.thumbnailUrl ?? "",
+      minutes: String((exercise as any).minutes ?? "1"),
       audioUrl: exercise.audioUrl ?? "",
       ttsScript: exercise.ttsScript ?? "",
       ttsScriptAr: exercise.ttsScriptAr ?? "",
@@ -633,11 +641,17 @@ export function ExerciseManagement() {
       equipment: form.equipment.trim(),
       difficulty: form.difficulty.trim(),
       gifUrl: form.gifUrl.trim(),
+      thumbnailUrl: form.thumbnailUrl.trim(),
+      minutes: Number.parseInt(form.minutes.trim() || "1", 10),
       audioUrl: form.audioUrl.trim(),
       ttsScript: form.ttsScript.trim(),
       ttsScriptAr: form.ttsScriptAr.trim(),
     };
     if (!input.name) return;
+    if (!Number.isFinite(input.minutes) || input.minutes <= 0 || input.minutes > 60) {
+      window.alert(t("أدخل مدة صحيحة بالدقائق (1-60)", "Enter a valid duration in minutes (1-60)"));
+      return;
+    }
     if (!validateSelectedFile(selectedMediaFile) || !validateSelectedFile(selectedAudioFile)) return;
 
     if (!canUseFirebase || !db) {
@@ -657,6 +671,7 @@ export function ExerciseManagement() {
         sourceRaw: "Manual",
         gif: "🏋️",
         gifUrl: input.gifUrl,
+        thumbnailUrl: input.thumbnailUrl || undefined,
         audioUrl: input.audioUrl,
         ttsScript: input.ttsScript,
         ttsScriptAr: input.ttsScriptAr,
@@ -693,13 +708,14 @@ export function ExerciseManagement() {
       name_ar: input.name,
       type: "home",
       target: input.target,
-      minutes: 1,
+      minutes: input.minutes,
       calories: 0,
       equipment: input.equipment,
       level: input.difficulty,
       image_asset_path: mediaUrl,
       media_url: mediaUrl,
       media_type: mediaType,
+      thumbnail_url: input.thumbnailUrl || null,
       audio_url: audioUrl,
       tts_script: input.ttsScript || null,
       tts_script_ar: input.ttsScriptAr || null,
@@ -718,11 +734,17 @@ export function ExerciseManagement() {
       equipment: form.equipment.trim(),
       difficulty: form.difficulty.trim(),
       gifUrl: form.gifUrl.trim(),
+      thumbnailUrl: form.thumbnailUrl.trim(),
+      minutes: Number.parseInt(form.minutes.trim() || "1", 10),
       audioUrl: form.audioUrl.trim(),
       ttsScript: form.ttsScript.trim(),
       ttsScriptAr: form.ttsScriptAr.trim(),
     };
     if (!input.name) return;
+    if (!Number.isFinite(input.minutes) || input.minutes <= 0 || input.minutes > 60) {
+      window.alert(t("أدخل مدة صحيحة بالدقائق (1-60)", "Enter a valid duration in minutes (1-60)"));
+      return;
+    }
     if (!validateSelectedFile(selectedMediaFile) || !validateSelectedFile(selectedAudioFile)) return;
 
     if (!canUseFirebase || !db || typeof exercise.id !== "string") {
@@ -774,9 +796,11 @@ export function ExerciseManagement() {
         target: input.target,
         equipment: input.equipment,
         level: input.difficulty,
+        minutes: input.minutes,
         image_asset_path: mediaUrl,
         media_url: mediaUrl,
         media_type: mediaType,
+        thumbnail_url: input.thumbnailUrl || null,
         audio_url: audioUrl,
         tts_script: input.ttsScript || null,
         tts_script_ar: input.ttsScriptAr || null,
@@ -1024,6 +1048,16 @@ export function ExerciseManagement() {
                     <input value={form.target} onChange={(e) => setForm((prev) => ({ ...prev, target: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-secondary border border-border" />
                   </div>
                   <div>
+                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("مدة التمرين (دقيقة)", "Duration (minutes)")}</label>
+                    <input
+                      value={form.minutes}
+                      onChange={(e) => setForm((prev) => ({ ...prev, minutes: e.target.value }))}
+                      inputMode="numeric"
+                      className="w-full px-3 py-2 rounded-lg bg-secondary border border-border"
+                      placeholder="1"
+                    />
+                  </div>
+                  <div>
                     <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("الأدوات", "Equipment")}</label>
                     <input value={form.equipment} onChange={(e) => setForm((prev) => ({ ...prev, equipment: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-secondary border border-border" />
                   </div>
@@ -1040,6 +1074,10 @@ export function ExerciseManagement() {
                   <div>
                     <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("رابط الميديا (اختياري)", "Media URL (optional)")}</label>
                     <input value={form.gifUrl} onChange={(e) => setForm((prev) => ({ ...prev, gifUrl: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-secondary border border-border" />
+                  </div>
+                  <div>
+                    <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("رابط صورة الفيديو (اختياري)", "Video thumbnail URL (optional)")}</label>
+                    <input value={form.thumbnailUrl} onChange={(e) => setForm((prev) => ({ ...prev, thumbnailUrl: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-secondary border border-border" />
                   </div>
                   <div>
                     <label className="text-muted-foreground block mb-1" style={{ fontSize: 12 }}>{t("رابط الصوت (اختياري)", "Audio URL (optional)")}</label>
