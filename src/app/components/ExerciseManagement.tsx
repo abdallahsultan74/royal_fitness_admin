@@ -6,6 +6,66 @@ import { db, ensureStaffAuth, hasFirebaseConfig } from "../firebase";
 import { adminDelivery } from "../buildConfig";
 import { bilingualOptionMatches, normalizeForSearch, textMatchesQuery } from "../searchUtils";
 
+function parseYouTubeId(rawUrl: string): string | null {
+  try {
+    const u = new URL(rawUrl);
+    const host = u.hostname.replace(/^www\./i, "").toLowerCase();
+    if (host === "youtu.be") {
+      const id = u.pathname.split("/").filter(Boolean)[0];
+      return id ? id.trim() : null;
+    }
+    if (host.endsWith("youtube.com")) {
+      const v = u.searchParams.get("v");
+      if (v) return v.trim();
+      const parts = u.pathname.split("/").filter(Boolean);
+      // /shorts/<id>, /embed/<id>
+      const idx = parts.findIndex((p) => p === "shorts" || p === "embed" || p === "v");
+      if (idx >= 0 && parts[idx + 1]) return parts[idx + 1]!.trim();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function parseVimeoId(rawUrl: string): string | null {
+  try {
+    const u = new URL(rawUrl);
+    const host = u.hostname.replace(/^www\./i, "").toLowerCase();
+    if (!host.endsWith("vimeo.com")) return null;
+    const parts = u.pathname.split("/").filter(Boolean);
+    // vimeo.com/<id> or vimeo.com/video/<id>
+    const id = parts[0] === "video" ? parts[1] : parts[0];
+    if (!id) return null;
+    return /^\d+$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+function isDirectVideoUrl(rawUrl: string): boolean {
+  const s = rawUrl.trim().toLowerCase();
+  return (
+    s.endsWith(".mp4") ||
+    s.endsWith(".webm") ||
+    s.endsWith(".mov") ||
+    s.endsWith(".m3u8") ||
+    s.includes(".mp4?") ||
+    s.includes(".webm?") ||
+    s.includes(".mov?") ||
+    s.includes(".m3u8?")
+  );
+}
+
+function videoThumbUrl(rawUrl: string): string | null {
+  const yt = parseYouTubeId(rawUrl);
+  if (yt) return `https://img.youtube.com/vi/${yt}/hqdefault.jpg`;
+  const vimeo = parseVimeoId(rawUrl);
+  // vumbnail is a lightweight public thumbnail proxy for Vimeo IDs.
+  if (vimeo) return `https://vumbnail.com/${vimeo}.jpg`;
+  return null;
+}
+
 const exercisesFallback = {
   ar: [
     { id: 1, name: "ضغط البنش بالبار", target: "الصدر", difficulty: "متوسط", equipment: "بار حديدي", source: "يدوي", gif: "🏋️" },
@@ -151,6 +211,7 @@ type ExerciseItem = {
   gif: string;
   gifUrl?: string;
   mediaType?: "image" | "video";
+  thumbnailUrl?: string;
   audioUrl?: string;
   ttsScript?: string;
   ttsScriptAr?: string;
@@ -316,6 +377,7 @@ export function ExerciseManagement() {
           gif: "🏋️",
           gifUrl: data.media_url?.toString() ?? data.image_asset_path?.toString(),
           mediaType: (data.media_type?.toString() === "video" ? "video" : "image"),
+          thumbnailUrl: data.thumbnail_url?.toString() ?? data.thumbnailUrl?.toString(),
           audioUrl: data.audio_url?.toString(),
           ttsScript: data.tts_script?.toString(),
           ttsScriptAr: data.tts_script_ar?.toString(),
@@ -833,7 +895,40 @@ export function ExerciseManagement() {
                   {e.gifUrl && e.mediaType !== "video" ? (
                     <img src={e.gifUrl} alt={e.name} className="w-10 h-10 rounded-lg object-cover border border-border bg-secondary" />
                   ) : e.gifUrl && e.mediaType === "video" ? (
-                    <video src={e.gifUrl} className="w-10 h-10 rounded-lg object-cover border border-border bg-secondary" muted />
+                    (() => {
+                      const url = e.gifUrl!;
+                      const thumb = e.thumbnailUrl?.trim() || videoThumbUrl(url);
+                      const direct = isDirectVideoUrl(url);
+                      if (thumb && !direct) {
+                        return (
+                          <div className="relative w-10 h-10 rounded-lg overflow-hidden border border-border bg-secondary">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={thumb} alt={e.name} className="w-full h-full object-cover" loading="lazy" />
+                            <div className="absolute inset-0 grid place-items-center bg-black/20">
+                              <span className="grid place-items-center w-5 h-5 rounded-full bg-black/55">
+                                <Play className="w-3 h-3 text-white translate-x-[0.5px]" />
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (direct) {
+                        return (
+                          <video
+                            src={url}
+                            className="w-10 h-10 rounded-lg object-cover border border-border bg-secondary"
+                            muted
+                            playsInline
+                            preload="metadata"
+                          />
+                        );
+                      }
+                      return (
+                        <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center border border-border">
+                          <Play className="w-4 h-4 text-[#D4AF37]" />
+                        </div>
+                      );
+                    })()
                   ) : (
                     <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center" style={{ fontSize: 20 }}>
                       {e.gif}
